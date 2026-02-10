@@ -1,0 +1,10 @@
+apscheduler==3.11.2
+delta_rest_client==1.0.12
+Django==6.0.2
+django_scheduler==0.10.1
+numpy==2.4.2
+pandas==3.0.0
+pandas_ta_classic==0.3.59
+pytz==2025.2
+Requests==2.32.5
+schedule==1.2.2
