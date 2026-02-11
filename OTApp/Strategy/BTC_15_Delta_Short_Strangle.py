@@ -5,17 +5,19 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 
 from OTApp.Analyser import DataAnalyser, Trend
 from OTApp.Analyser.Trend import Market
+from OTApp.Configuration.AppConfig import Config
 from OTApp.DataCollectors.DeltaExchangeDataCollector import DataCollector
 from OTApp.Logger.Logger import AppLogger
 from OTApp.Margin.Margin import Margin
 from OTApp.Wallet.Wallet import Wallet
+from OTApp.settings import TIME_ZONE
 
 
 class BTC_15_Delta_Strangle:
     _loger_ = AppLogger().get_log()
     CONFIG = {
-        'START_TIME': "06:00",  # Entry time in IST (24h format)
-        'TRY_END_TIME': dtime(8, 15),  # Keep try for punching trade upto this 8:15 AM
+        'START_TIME': "09:00",  # Entry time in IST (24h format)
+        'TRY_END_TIME': dtime(21, 15),  # Keep try for punching trade upto this 8:15 AM
         'TRAIL_FREQUENCY': 1,  # Trail frequency in minutes
         'GOAL_TARGET_PROFIT_INR': 33.24,
         # Your goal, actual  need to calculated as per premium collected with ration 2/3
@@ -24,7 +26,7 @@ class BTC_15_Delta_Strangle:
     }
 
     def trade_job(self):
-        self._loger_.info(f"--- Window Opened at {datetime.now().strftime('%H:%M:%S')} ---")
+        self._loger_.critical(f"--- Window Opened at {datetime.now().strftime('%H:%M:%S')} ---")
         # Define the hard cutoff
         cutoff_time = BTC_15_Delta_Strangle.CONFIG['TRY_END_TIME']
         while True:
@@ -107,11 +109,11 @@ class BTC_15_Delta_Strangle:
 
 
 # --- Scheduler Setup ---
-scheduler = BlockingScheduler()
+scheduler = BlockingScheduler(timezone=Config.TIME_ZONE.zone)
 # This tells the scheduler to wake up at 06:00 every day
-scheduler.add_job(BTC_15_Delta_Strangle().trade_job, 'cron', hour=6, minute=00)
-AppLogger.logger.info("Scheduler active. The bot will check every minute between 06:00 and 08:15 daily.")
+scheduler.add_job(BTC_15_Delta_Strangle().trade_job, 'cron', hour=11, minute=10)
+AppLogger.logger.info("Scheduler active. The bot will check every minute between 06:00 and 08:15 IST daily.")
 try:
     scheduler.start()
 except (KeyboardInterrupt, SystemExit):
-    AppLogger.logger.error("Scheduler stopped manually.")
+    AppLogger.logger.critical(f"Scheduler stopped manually")

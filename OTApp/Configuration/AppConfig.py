@@ -1,6 +1,8 @@
 import logging
 import os
 
+import pytz
+
 
 class Config:
     # --- GLOBAL TOGGLE ---
@@ -13,6 +15,9 @@ class Config:
     # --- TELEGRAM SETTINGS ---
     TG_TOKEN = os.getenv('tg_softashu_bot')
     TG_CHAT_ID = os.getenv('tg_chat_id')
+
+    # -------Time Zone ----------
+    TIME_ZONE = pytz.timezone('Asia/Kolkata')
 
     @property
     def LOG_LEVEL(self):
