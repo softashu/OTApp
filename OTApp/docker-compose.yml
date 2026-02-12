@@ -1,0 +1,12 @@
+version: '3.8'
+services:
+  15-delta:
+    image: 15_delta_image:latest
+    pull_policy: never
+    container_name: 15_delta
+    restart: unless-stopped
+    volumes:
+      - /home/ubuntu/OTApp/logs:/app/logs
+    env_file:
+      - OTApp.env
+    command: [ "python3", "-m", "OTApp.Strategy.BTC_15_Delta_Short_Strangle" ]
