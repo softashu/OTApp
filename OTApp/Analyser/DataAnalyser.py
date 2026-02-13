@@ -130,6 +130,14 @@ class DataAnalyser:
                           or below a Swing Low (Sellside Liquidity).
             The Rejection: The candle closes back inside the previous range.
             The Confirmation: The following candle moves strongly in the opposite direction.
+
+        By combining these, your bot can avoid the "Breakout Trap.
+
+        Scenario                    Market Action                       Bot Decision
+        Price hits Swing High       Just a level touch.                 ⚠️ Wait for more data.
+        Liquidity Sweep at High     Price wicks out and rejects.        ✅ Sell Calls. (The "Fake-out" is over).
+        Price returns to Bullish OB Pullback to institutional buy zone. 🚫 Don't Sell Calls. (Expect a bounce).
+
         """
         # df_sorted = df_for_all.sort_values('time', ascending=True).copy()
         # df = df_sorted
