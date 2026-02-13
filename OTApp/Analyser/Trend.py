@@ -161,7 +161,7 @@ class Market:
                           f" And Call should closed when marker crossing or crossed up {swings['swing_high']}")
 
         # Calculating Order block
-        obs = indicator.find_order_blocks(df=df_for_all)
+        obs = indicator.find_order_blocks(df_for_all)
 
         return {
             'sideways': haan,
@@ -175,7 +175,8 @@ class Market:
             'market_trend': trend,
             'super_trend': super_trend,
             'strangle_points': strangle_points,
-            'order_block': obs
+            'order_block': obs,
+            'swings': swings
         }
 
     def price_movement_pc(self, df_for_all, symbol, resolution, limit):

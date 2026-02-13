@@ -333,7 +333,7 @@ class Indicator:
 
         return {'swing_low': last_sl, 'swing_high': last_sh}
 
-    def find_order_blocks(self, df, lookback=50):
+    def find_order_blocks(self, df_for_all, lookback=30):
 
         """
         Integrating Order Blocks (OB) into your bot is like giving it "Institutional X-ray vision."
@@ -353,24 +353,67 @@ class Indicator:
                                     Bullish Order Block at $60,000, your trade is much safer.
                                     The OB acts as a "shield" that the market must break through before
                                     it can even touch your strike.
-
+        why taking 30 candle ?
+        Data Length,        ADX Accuracy,       SuperTrend Accuracy,       RSI Accuracy,      OB Accuracy,                                  Swing Detection
+        30 Candles,         ❌ Poor,             ❌ Inaccurate,           ⚠️ Rough,           ✅ Good                                      ✅ Excellent (Finds immediate local turns)
+                                                                                                (Finds fresh institutional zones)
+        150 Candles,        ✅ High,             ✅ High,                 ✅ Perfect,"        ⚠️ Slow                                      ⚠️ Noisy (Finds too many old, irrelevant peaks)"
+                                                                                                (Might find "dead" zones from days ago)
         :param lookback:
         :return:
 
         """
-        obs = []
-        for i in range(len(df) - lookback, len(df) - 2):
-            # 🟢 Bullish OB: Last RED candle before a strong GREEN break
-            if df['close'][i] < df['open'][i]:
-                if df['close'][i + 1] > df['high'][i]:
-                    obs.append({'type': 'BULLISH', 'top': df['high'][i], 'bottom': df['low'][i]})
+        try:
+            obs = []
+            df_sorted = df_for_all.sort_values('time', ascending=True).copy()
+            df = df_sorted.tail(30).copy().reset_index(drop=True)
+            # for i in range(len(df) - lookback, len(df) - 2):
+            #     # 🟢 Bullish OB: Last RED candle before a strong GREEN break
+            #     if df['close'][i] < df['open'][i]:
+            #         if df['close'][i + 1] > df['high'][i]:
+            #             obs.append({'type': 'BULLISH', 'top': df['high'][i], 'bottom': df['low'][i]})
+            #
+            #     # 🔴 Bearish OB: Last GREEN candle before a strong RED break
+            #     elif df['close'][i] > df['open'][i]:  # This is a Bullish candle
+            #         if df['close'][i + 1] < df['low'][i]:  # Immediate strong break below its low
+            #             obs.append({'type': 'BEARISH', 'top': df['high'][i], 'bottom': df['low'][i]})
+            # return obs[-1] if obs else None
 
-            # 🔴 Bearish OB: Last GREEN candle before a strong RED break
-            elif df['close'][i] > df['open'][i]:  # This is a Bullish candle
-                if df['close'][i + 1] < df['low'][i]:  # Immediate strong break below its low
-                    obs.append({'type': 'BEARISH', 'top': df['high'][i], 'bottom': df['low'][i]})
+            # getting validated get_validated_ob
 
-        return obs[-1] if obs else None
+            # Calculate average candle body size for Momentum check
+            avg_body = (df['close'] - df['open']).abs().rolling(20).mean().iloc[-1]
+            for i in range(len(df) - lookback, len(df) - 2):
+                # 1. Check for MOMENTUM (Next candle must be 2x avg body)
+                move_size = abs(df['close'].iloc[i + 1] - df['open'].iloc[i + 1])
+                has_momentum = move_size > (avg_body * 2)
+
+                # 2. Check for IMBALANCE (Fair Value Gap)
+                # Bullish FVG: Low of candle 3 is above High of candle 1
+                has_fvg_bull = df['low'].iloc[i + 2] > df['high'].iloc[i]
+                # Bearish FVG: High of candle 3 is below Low of candle 1
+                has_fvg_bear = df['high'].iloc[i + 2] < df['low'].iloc[i]
+
+                # 3. BULLISH VALIDATION
+                if df['close'].iloc[i] < df['open'].iloc[i] and has_momentum and has_fvg_bull:
+
+                    # Mitigation Check: Has price returned to this zone since candle i?
+                    zone_min = df['low'].iloc[i]
+                    # If any subsequent low was <= zone_min, it is MITIGATED
+                    is_mitigated = (df['low'].iloc[i + 1:] <= df['high'].iloc[i]).any()
+
+                    if not is_mitigated:
+                        obs.append({'type': 'BULLISH', 'top': df['high'].iloc[i], 'bottom': df['low'].iloc[i]})
+
+                # 4. BEARISH VALIDATION
+                elif df['close'].iloc[i] > df['open'].iloc[i] and has_momentum and has_fvg_bear:
+                    is_mitigated = (df['high'].iloc[i + 1:] >= df['low'].iloc[i]).any()
+                    if not is_mitigated:
+                        obs.append({'type': 'BEARISH', 'top': df['high'].iloc[i], 'bottom': df['low'].iloc[i]})
+            return obs[-1] if obs else None
+        except Exception as ex:
+            self._loger_.error(f"Error : While calculating Order Blocks : {ex}")
+            return None
 
 # print(f"Matched RSI {Indicator().get_synced_rsi([])}")
 # pprint(Indicator().get_supertrend_status([]))
