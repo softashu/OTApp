@@ -161,7 +161,19 @@ class Market:
                           f" And Call should closed when marker crossing or crossed up {swings['swing_high']}")
 
         # Calculating Order block
+        """
+        Validated Bearish OB above price	✅ Safe to sell Call. The OB acts as a ceiling for your 0.15 Delta.
+        Validated Bullish OB below the proce  ✅ Safe to sell Put. The OB acts as a resistance
+        """
         obs = indicator.find_order_blocks(df_for_all)
+        if not obs and (trend == 'STABLE_SIDEWAYS' or trend == 'PERFECT_SIDEWAYS'):
+            self._loger_.info(
+                f"👉 ACTION: OB-Safe to Enter 0.15 Delta Strangle")
+            self._loger_.critical("Order Block : ✅ 💎 💎 💎 💎 Green Light ON Strangle is high probability.")
+            strangle_points = strangle_points + 1
+            if 'CONFIRM' in super_trend['super_trend']:
+                self._loger_.critical(
+                    "Order Block : ✅ 💎 💎 💎 💎 💎 💎 Ultimate++ Green Light ON Strangle is high probability.")
 
         return {
             'sideways': haan,
@@ -202,7 +214,6 @@ class Market:
         Resolution: Supported intervals include 1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 6h, 1d
 
         """
-        # candles = DataCollector().get_candles(symbol, resolution, limit)
         df_sorted = df_for_all.sort_values('time', ascending=True).copy()
         candles = df_sorted.to_dict(orient='records')[-24:]
         closing_prices = [float(c['close']) for c in candles]

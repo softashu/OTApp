@@ -362,23 +362,21 @@ class Indicator:
         :param lookback:
         :return:
 
+        you should use the detected OB as a "No-Fly Zone" for your bot.
+
+        If Price reaches...             And OB is...                Your Action
+        Bearish OB                      Just above current price    🚫 Cancel Call Sell
+                                                                    (Expect a rejection or fake-out).
+        Bullish OB                      Just below current price    🚫 Cancel Put Sell
+                                                                    (Expect a massive bounce).
+        "Void"                          No OB nearby                ✅ Safe for Strangle
+                                                                    (Price is in "no man's land").
+
         """
         try:
             obs = []
             df_sorted = df_for_all.sort_values('time', ascending=True).copy()
             df = df_sorted.tail(30).copy().reset_index(drop=True)
-            # for i in range(len(df) - lookback, len(df) - 2):
-            #     # 🟢 Bullish OB: Last RED candle before a strong GREEN break
-            #     if df['close'][i] < df['open'][i]:
-            #         if df['close'][i + 1] > df['high'][i]:
-            #             obs.append({'type': 'BULLISH', 'top': df['high'][i], 'bottom': df['low'][i]})
-            #
-            #     # 🔴 Bearish OB: Last GREEN candle before a strong RED break
-            #     elif df['close'][i] > df['open'][i]:  # This is a Bullish candle
-            #         if df['close'][i + 1] < df['low'][i]:  # Immediate strong break below its low
-            #             obs.append({'type': 'BEARISH', 'top': df['high'][i], 'bottom': df['low'][i]})
-            # return obs[-1] if obs else None
-
             # getting validated get_validated_ob
 
             # Calculate average candle body size for Momentum check
@@ -410,6 +408,7 @@ class Indicator:
                     is_mitigated = (df['high'].iloc[i + 1:] >= df['low'].iloc[i]).any()
                     if not is_mitigated:
                         obs.append({'type': 'BEARISH', 'top': df['high'].iloc[i], 'bottom': df['low'].iloc[i]})
+            ob={}
             return obs[-1] if obs else None
         except Exception as ex:
             self._loger_.error(f"Error : While calculating Order Blocks : {ex}")
