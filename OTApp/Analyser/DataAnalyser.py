@@ -117,3 +117,31 @@ class DataAnalyser:
                     f"✅ ACTION: Safe to sell Put {put_strike}. The OB acts as a structural floor. is protected by Bullish OB {ob_bottom}.")
                 return True
         return False
+
+    def check_liquidity_sweep(self, df, last_sh, last_sl):
+        """
+        Liquidity Sweeps: The "Fake-Out" Detection
+        A Liquidity Sweep happens when the price briefly pierces a major Swing High or Low to
+        trigger stop-loss orders, then immediately reverses.
+
+        A sweep is confirmed when:
+
+            The Piercing: The current candle's wick goes above a recent Swing High (Buyside Liquidity)
+                          or below a Swing Low (Sellside Liquidity).
+            The Rejection: The candle closes back inside the previous range.
+            The Confirmation: The following candle moves strongly in the opposite direction.
+        """
+        # df_sorted = df_for_all.sort_values('time', ascending=True).copy()
+        # df = df_sorted
+        # Get current candle data
+        curr_high, curr_low, curr_close = df['high'].iloc[-1], df['low'].iloc[-1], df['close'].iloc[-1]
+        prev_close = df['close'].iloc[-2]
+
+        # 🔴 Bearish Sweep (Buy side Liquidity Grab)
+        if curr_high > last_sh and curr_close < last_sh:
+            return "BEARISH_SWEEP"
+
+        # 🟢 Bullish Sweep (Sellside Liquidity Grab)
+        if curr_low < last_sl and curr_close > last_sl:
+            return "BULLISH_SWEEP"
+        return None

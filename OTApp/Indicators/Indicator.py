@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import pandas_ta_classic as ta
 
+from OTApp.Analyser.DataAnalyser import DataAnalyser
 from OTApp.DataCollectors.DeltaExchangeDataCollector import DataCollector
 from OTApp.Logger.Logger import AppLogger
 
@@ -304,7 +305,6 @@ class Indicator:
         last_sh = 0.0
         last_sl = 0.0
         try:
-            # candles = DataCollector().get_candles(symbol, resolution, limit=24)
             df_sorted = df_for_all.sort_values('time', ascending=True).copy()
             candles = df_sorted.to_dict(orient='records')[-24:]
             df = pd.DataFrame(candles)
@@ -327,11 +327,16 @@ class Indicator:
             last_sh = df['swing_high'].dropna().iloc[-1]
             last_sl = df['swing_low'].dropna().iloc[-1]
 
+            """
+            Liquidity Sweeps: The "Fake-Out" Detection
+            """
+            liquidity_sweep = DataAnalyser().check_liquidity_sweep(df, last_sh, last_sl)
+
             self._loger_.info(f"Latest Resistance : {last_sh}  Latest Support : {last_sl}")
         except Exception as ex:
             self._loger_.error(f"Swing calculation having issue {ex}")
 
-        return {'swing_low': last_sl, 'swing_high': last_sh}
+        return {'swing_low': last_sl, 'swing_high': last_sh, 'liquidity_sweep': liquidity_sweep}
 
     def find_order_blocks(self, df_for_all, lookback=30):
 
@@ -408,7 +413,7 @@ class Indicator:
                     is_mitigated = (df['high'].iloc[i + 1:] >= df['low'].iloc[i]).any()
                     if not is_mitigated:
                         obs.append({'type': 'BEARISH', 'top': df['high'].iloc[i], 'bottom': df['low'].iloc[i]})
-            ob={}
+            ob = {}
             return obs[-1] if obs else None
         except Exception as ex:
             self._loger_.error(f"Error : While calculating Order Blocks : {ex}")
