@@ -12,9 +12,9 @@ class DataCollector:
     BASE_URL = 'https://api.india.delta.exchange/v2'
     CE_PE_URL = BASE_URL + '/tickers'
     # Automatically get today's date in DD-MM-YYYY format
-    today = datetime.now().strftime("%d-%m-%Y")
+    # today = datetime.now().strftime("%d-%m-%Y")
 
-    # today = (datetime.now() + timedelta(days=1)).strftime("%d-%m-%Y")
+    today = (datetime.now() + timedelta(days=1)).strftime("%d-%m-%Y")
 
     def fetch_btc_options(today):
         # Public endpoint for all products

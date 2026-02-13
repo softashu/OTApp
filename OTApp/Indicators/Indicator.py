@@ -11,7 +11,7 @@ from OTApp.Logger.Logger import AppLogger
 class Indicator:
     _loger_ = AppLogger().get_log()
 
-    def sma_slope(self, symbol, resolution):
+    def sma_slope(self, df_for_all, symbol, resolution):
         """
         ***The method help to analyse market trend  ***
 
@@ -44,7 +44,9 @@ class Indicator:
         try:
             # 1. Fetch 24 candles for SMA (20) have enough data to "warm up"
             # We need 20 (for SMA) + 5 (for the lookback) = 25 candles
-            candles = DataCollector().get_candles(symbol, resolution, 30)
+            # candles = DataCollector().get_candles(symbol, resolution, 30)
+            df_sorted = df_for_all.sort_values('time', ascending=True).copy()
+            candles = df_sorted.to_dict(orient='records')[-30:]
             closes = [float(c['close']) for c in candles]
             # 2. Calculate Current SMA20 and Past SMA20 (5 hours ago)
             current_sma = sum(closes[-20:]) / 20
@@ -91,10 +93,9 @@ class Indicator:
             rsi[i] = 100. - 100. / (1. + rs)
         return rsi[-1]
 
-    def get_exchange_matching_rsi(self, symbol, resolution, period=14):
-        # Fetch 103 candles instead of 40 to allow for 'warm-up' why 103 need to talk
-        candles = DataCollector().get_candles(symbol, resolution, 97)
-        df = pd.DataFrame(candles)
+    def get_exchange_matching_rsi(self, df_for_all, symbol, resolution, period=14):
+        df_sorted = df_for_all.sort_values('time', ascending=True).copy()
+        df = df_sorted
         df['close'] = df['close'].astype(float)
 
         # Calculate price changes
@@ -112,7 +113,7 @@ class Indicator:
         rs = avg_gain / avg_loss
         rsi = 100 - (100 / (1 + rs))
 
-        return {'rsi': rsi.iloc[-1], 'df_100': df}
+        return {'rsi': rsi.iloc[-1]}
 
     def get_synced_rsi(self, df, period=14):
         # Fetch 100 candles instead of 40 to allow for 'warm-up'
@@ -143,13 +144,13 @@ class Indicator:
 
         return rsi[-1]
 
-    def get_supertrend_status(self, df_100, symbol='BTCUSD', resolution='1h', period=10, multiplier=3):
+    def get_supertrend_status(self, df_for_all, symbol='BTCUSD', resolution='1h', period=10, multiplier=3):
 
         """
         Adding the SuperTrend indicator to your hourly chart is a masterclass in "Trend Confirmation."
         While the RSI and SMA Slope tell you if the market is quiet, the SuperTrend acts as a definitive Safety Fence.
 
-        :param df_100:
+        :param df_for_all:
         :param symbol:
         :param resolution:
         :param period:
@@ -167,9 +168,14 @@ class Indicator:
         flat = False
         try:
             # candles_direction_cal = DataCollector().get_candles(symbol, resolution, limit=97)
-            df_direction = df_100
+            # Sort the dataframe so Oldest is at the top, Newest at the bottom
+            df_sorted = df_for_all.sort_values('time', ascending=True).copy()
+            # Now take the tail (The 100 most recent candles)
+            df_direction = df_sorted.tail(100).copy().reset_index(drop=True)
+            # Now df_direction.iloc[-1] will be your absolute latest candle!
             df_direction['atr'] = ta.atr(df_direction['high'], df_direction['low'], df_direction['close'],
                                          length=period)
+
             st_direction = ta.supertrend(df_direction['high'], df_direction['low'], df_direction['close'],
                                          length=period, multiplier=multiplier)
             # SUPERTd column: 1 is Bullish (Green), -1 is Bearish (Red)
@@ -196,7 +202,8 @@ class Indicator:
             Long Flat Line	    Consolidation	    ✅ Ideal Entry (Selling Volatility)
             
             """
-            candles_flateness_cal = DataCollector().get_candles(symbol, resolution, limit=50)
+            # candles_flateness_cal = DataCollector().get_candles(symbol, resolution, limit=50)
+            candles_flateness_cal = df_sorted.iloc[-50:].copy()
             df_flatness = pd.DataFrame(candles_flateness_cal)
             # Calculate ATR first using Wilder's
             df_flatness['atr'] = ta.atr(df_flatness['high'], df_flatness['low'], df_flatness['close'], length=period)
@@ -227,10 +234,10 @@ class Indicator:
                    Flat             > 25            "The Trap" (Breakout imminent)  🚫 DO NOT ENTER
                    Sloping          Any             Trending                        🚫 DO NOT ENTER
             """
-            adx = self.get_adx(df_flatness)
+            adx = self.get_adx(df_sorted)
             if adx['is_sideways'] and flat:
                 super_trend = super_trend + '_CONFIRM'
-                self._loger_.critical(f"⏸️ ⏸️ SuperTrend : {super_trend}  on {resolution} time frame ")
+                self._loger_.critical(f"⏸️ ⏸️ SuperTrend + ADX : {super_trend}  on {resolution} time frame ")
             return {'super_trend': super_trend, 'flat': flat, 'adx': adx}
         except Exception as e:
             self._loger_.error(f"⚠️ SuperTrend Error: {e}")
@@ -271,7 +278,7 @@ class Indicator:
 
         return {'is_sideways': is_sideways, 'adx': current_adx}
 
-    def get_swings(self, symbol='BTCUSD', resolution='1h', window=2):
+    def get_swings(self, df_for_all, symbol='BTCUSD', resolution='1h', window=2):
         """
         Adding Swing Highs and Swing Lows is a major upgrade for your bot's risk management.
         While the SuperTrend tells you the current "mood," Swing points provide the actual
@@ -297,7 +304,9 @@ class Indicator:
         last_sh = 0.0
         last_sl = 0.0
         try:
-            candles = DataCollector().get_candles(symbol, resolution, limit=24)
+            # candles = DataCollector().get_candles(symbol, resolution, limit=24)
+            df_sorted = df_for_all.sort_values('time', ascending=True).copy()
+            candles = df_sorted.to_dict(orient='records')[-24:]
             df = pd.DataFrame(candles)
             # 1. FORCE numeric conversion on all OHLC columns
             # 'coerce' turns any non-number (like "N/A" or "") into NaN
@@ -323,6 +332,45 @@ class Indicator:
             self._loger_.error(f"Swing calculation having issue {ex}")
 
         return {'swing_low': last_sl, 'swing_high': last_sh}
+
+    def find_order_blocks(self, df, lookback=50):
+
+        """
+        Integrating Order Blocks (OB) into your bot is like giving it "Institutional X-ray vision."
+        While a SuperTrend or RSI tells you what is happening, an Order Block tells you where the
+        "Big Fish" (banks and hedge funds) have left their money.For a 0.15 Delta Strangle,
+        this is a massive upgrade because it helps you avoid selling a Call right in front of a Bullish Order Block
+        where the price is likely to skyrocket.
+
+        Why Integrate OB?
+            Basic support/resistance levels are often "hunted" for liquidity. Order Blocks represent unfilled institutional
+            orders.
+                Bullish OB: The last bearish candle before a strong upward impulsive move.
+                            This acts as a powerful "Buy Zone."
+                Bearish OB: The last bullish candle before a sharp drop. This acts as a powerful "Sell Zone."
+
+        How it helps your Strangle: If your 0.15 Delta Put strike is at $58,000 and there is a massive
+                                    Bullish Order Block at $60,000, your trade is much safer.
+                                    The OB acts as a "shield" that the market must break through before
+                                    it can even touch your strike.
+
+        :param lookback:
+        :return:
+
+        """
+        obs = []
+        for i in range(len(df) - lookback, len(df) - 2):
+            # 🟢 Bullish OB: Last RED candle before a strong GREEN break
+            if df['close'][i] < df['open'][i]:
+                if df['close'][i + 1] > df['high'][i]:
+                    obs.append({'type': 'BULLISH', 'top': df['high'][i], 'bottom': df['low'][i]})
+
+            # 🔴 Bearish OB: Last GREEN candle before a strong RED break
+            elif df['close'][i] > df['open'][i]:  # This is a Bullish candle
+                if df['close'][i + 1] < df['low'][i]:  # Immediate strong break below its low
+                    obs.append({'type': 'BEARISH', 'top': df['high'][i], 'bottom': df['low'][i]})
+
+        return obs[-1] if obs else None
 
 # print(f"Matched RSI {Indicator().get_synced_rsi([])}")
 # pprint(Indicator().get_supertrend_status([]))

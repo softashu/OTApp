@@ -16,7 +16,7 @@ from OTApp.settings import TIME_ZONE
 class BTC_15_Delta_Strangle:
     _loger_ = AppLogger().get_log()
     CONFIG = {
-        'START_TIME': "09:00",  # Entry time in IST (24h format)
+        'START_TIME': "06:00",  # Entry time in IST (24h format)
         'TRY_END_TIME': dtime(21, 15),  # Keep try for punching trade upto this 8:15 AM
         'TRAIL_FREQUENCY': 1,  # Trail frequency in minutes
         'GOAL_TARGET_PROFIT_INR': 33.24,
@@ -52,6 +52,24 @@ class BTC_15_Delta_Strangle:
                         # combine premium collection
 
                         # Need to check price matching condition before placing order
+                        leg_0_price_bid = float(options_list[0]['quotes']['best_bid'])
+                        leg_1_price_bid = float(options_list[1]['quotes']['best_bid'])
+
+                        leg_0_price_ask = float(options_list[0]['quotes']['best_ask'])
+                        leg_1_price_ask = float(options_list[1]['quotes']['best_ask'])
+
+                        """
+                        Suppose if price does not match 
+                        1. get the lower delta of that leg ---------recommendation for initial stage before going to
+                         lower delta check the trends in 12 h time frame
+                         1.1 Case study if trend is bearish on 12 h time frame lower down the PE leg to match the price similarly for CE side
+                         1.2 case just matched price in lower delta PE or CE accordingly which is higher
+                        
+                        2. second back test scenario keep stick with leg and trade with lower delta of opposite side 
+                        that have matched price -------when program became stable then try 
+                        
+                        """
+
                         # is_price_matching(options_list)
                         totalPremium = 0.0
                         spot_price = 0.0
@@ -59,7 +77,7 @@ class BTC_15_Delta_Strangle:
                         max_sell_lots = BTC_15_Delta_Strangle.CONFIG['LOT_SIZE_BTC']
                         for opt in options_list:
                             self._loger_.info(f"Symbol: {opt['symbol']}")
-                            totalPremium += int(opt['quotes']['best_bid']) * BTC_15_Delta_Strangle.CONFIG[
+                            totalPremium += float(opt['quotes']['best_bid']) * BTC_15_Delta_Strangle.CONFIG[
                                 'LOT_SIZE_BTC']
                             spot_price = opt['spot_price']
                             leverage = opt['leverage']
@@ -98,9 +116,9 @@ class BTC_15_Delta_Strangle:
                     # Wait for 1 minute before the next attempt/recheck
                     time.sleep(BTC_15_Delta_Strangle.CONFIG['TRAIL_FREQUENCY'] * 60 * 2)
                 else:
-                    self._loger_.warning(
-                        f"No 15-delta options pair found yet. Retrying in {BTC_15_Delta_Strangle.CONFIG['TRAIL_FREQUENCY'] * 20} Seconds...")
-                    time.sleep(BTC_15_Delta_Strangle.CONFIG['TRAIL_FREQUENCY'] * 30)
+                    self._loger_.info(
+                        f" Market does not looks side way ... will check in {BTC_15_Delta_Strangle.CONFIG['TRAIL_FREQUENCY'] * 5 * 60} Seconds...")
+                    time.sleep(BTC_15_Delta_Strangle.CONFIG['TRAIL_FREQUENCY'] * 60 * 5)
             except Exception as e:
                 self._loger_.error(
                     f"Error fetching data: {e}. Will retry in {BTC_15_Delta_Strangle.CONFIG['TRAIL_FREQUENCY']} minute.")
@@ -111,7 +129,7 @@ class BTC_15_Delta_Strangle:
 # --- Scheduler Setup ---
 scheduler = BlockingScheduler(timezone=Config.TIME_ZONE.zone)
 # This tells the scheduler to wake up at 06:00 every day
-scheduler.add_job(BTC_15_Delta_Strangle().trade_job, 'cron', hour=11, minute=10)
+scheduler.add_job(BTC_15_Delta_Strangle().trade_job, 'cron', hour=17, minute=00)
 AppLogger.logger.info("Scheduler active. The bot will check every minute between 06:00 and 08:15 IST daily.")
 try:
     scheduler.start()

@@ -1,5 +1,7 @@
 from pprint import pprint
 
+import pandas as pd
+
 from OTApp.DataCollectors.DeltaExchangeDataCollector import DataCollector
 from OTApp.Indicators.Indicator import Indicator
 from OTApp.Logger.Logger import AppLogger
@@ -17,8 +19,23 @@ class Market:
         over_xtended = ''
         trend = ''
         strangle_points = 0
+        """
+        The Correct Workflow
+        The best practice is to calculate your technical indicators using the full 150 candles first, 
+        and then slice the data for your Order Block function.
+        
+        1.Fetch: 150 candles.
+        2. Calculate Indicators: Use all 150 candles for SuperTrend/ADX / rsi etc ... 
+           or slice the fetched data according to indicator's requirements.
+        3. Slice for OBs: Pass the last 30 or 50 candles to the Order Block function to find the 
+           most recent institutional zones.
+        """
+        candles = DataCollector().get_candles(symbol, resolution, 150)
+        df_for_all = pd.DataFrame(candles)
+        indicator = Indicator()
+
         # 1. Getting price movement within given resolution
-        price_change_pct = self.price_movement_pc(symbol, resolution, limit)
+        price_change_pct = self.price_movement_pc(df_for_all, symbol, resolution, limit)
         # Filter Logic: If move > 5%, it's too trending for a Strangle
         if price_change_pct > 5.0:
             price_trend = "TREND_UP"
@@ -27,10 +44,10 @@ class Market:
         else:
             haan = True
             price_trend = "SIDEWAYS"
-            self._loger_.info("✅ Market looks sideways. Safe to proceed. but Checking SMA Slope....")
+            self._loger_.info("Price Movement : ✅ Market looks sideways. Safe to proceed...")
 
         # 2. Checking the slope of the 20-period Simple Moving Average (SMA)
-        sma_slope = Indicator().sma_slope(symbol, resolution)
+        sma_slope = indicator.sma_slope(df_for_all, symbol, resolution)
 
         # Combined Logic for Strangle Safety
         # Threshold: Slope < 0.05% and Price Change < 5%
@@ -38,7 +55,7 @@ class Market:
         if abs(sma_slope['sma_slop_val']) < 0.05 and abs(price_change_pct) < 5.0:
             trend = "STABLE_SIDEWAYS"
             strangle_points = strangle_points + 1
-            self._loger_.info("✅ 💎 Stable conditions. Delta 0.15 Strangle is high probability.")
+            self._loger_.info("+SMA Slope: ✅ 💎 Stable conditions. Delta 0.15 Strangle is high probability.")
             haan = True
         elif sma_slope['sma_slop'] == "TREND_UP" and price_trend == 'TREND_UP':
             trend = 'TREND_UP'
@@ -54,7 +71,7 @@ class Market:
             haan = False
 
         # 3. Checking RSI for oversold and overbought level
-        rsi_response = Indicator().get_exchange_matching_rsi(symbol, resolution)
+        rsi_response = indicator.get_exchange_matching_rsi(df_for_all, symbol, resolution)
         rsi = rsi_response['rsi']
         is_rsi_neutral = 40 < rsi < 60
 
@@ -71,7 +88,7 @@ class Market:
         if is_rsi_neutral and trend == "STABLE_SIDEWAYS":
             trend = "PERFECT_SIDEWAYS"
             strangle_points = strangle_points + 1
-            self._loger_.info("✅ 💎 💎 Perfect conditions. Delta 0.15 Strangle is high probability.")
+            self._loger_.info("+RSI : ✅ 💎 💎 Perfect conditions. Delta 0.15 Strangle is high probability.")
             haan = True
         # Good sign for market exhausted,...fall will soon
         elif rsi >= 70 and trend == 'STABLE_SIDEWAYS':
@@ -121,26 +138,30 @@ class Market:
             haan = False
 
         # Super_trend
-        super_trend = Indicator().get_supertrend_status(rsi_response['df_100'], symbol=symbol, resolution=resolution,
-                                                        period=10, multiplier=3)
+        super_trend = indicator.get_supertrend_status(df_for_all, symbol=symbol, resolution=resolution,
+                                                      period=10, multiplier=3)
 
         if trend == 'PERFECT_SIDEWAYS' and haan and super_trend['flat'] and 'SIDEWAYS' in super_trend['super_trend']:
             strangle_points = strangle_points + 1
-            self._loger_.info(" ✅ 💎 💎 💎 Super conditions Strangle is high probability.")
+            self._loger_.info("Super Trend : ✅ 💎 💎 💎 Super conditions Strangle is high probability.")
             if 'CONFIRM' in super_trend['super_trend']:
-                self._loger_.critical("✅ 💎 💎 💎 💎 💎 Ultimate Green Light ON Strangle is high probability.")
+                self._loger_.critical(
+                    "Super Trend : ✅ 💎 💎 💎 💎 💎 Ultimate Green Light ON Strangle is high probability.")
                 strangle_points = strangle_points + 1
         elif trend == 'STABLE_SIDEWAYS' and haan and super_trend['flat'] and 'SIDEWAYS' in super_trend['super_trend']:
             strangle_points = strangle_points + 1
-            self._loger_.info(" ✅ 💎 💎 💎 Super conditions Strangle is high probability.")
+            self._loger_.info("Super Trend :  ✅ 💎 💎 💎 Super conditions Strangle is high probability.")
             if 'CONFIRM' in super_trend['super_trend']:
                 strangle_points = strangle_points + 1
-                self._loger_.critical("✅ 💎 💎 💎 💎 Green Light ON Strangle is high probability.")
+                self._loger_.critical("Super Trend : ✅ 💎 💎 💎 💎 Green Light ON Strangle is high probability.")
 
         # Calculating swing high and low
-        swings = Indicator().get_swings(symbol=symbol, resolution=resolution, window=2)
+        swings = indicator.get_swings(df_for_all, symbol=symbol, resolution=resolution, window=2)
         self._loger_.info(f"Puts should closed when market crossing or crossed below {swings['swing_low']}"
                           f" And Call should closed when marker crossing or crossed up {swings['swing_high']}")
+
+        # Calculating Order block
+        obs = indicator.find_order_blocks(df=df_for_all)
 
         return {
             'sideways': haan,
@@ -153,10 +174,11 @@ class Market:
             'rsi': rsi,
             'market_trend': trend,
             'super_trend': super_trend,
-            'strangle_points': strangle_points
+            'strangle_points': strangle_points,
+            'order_block': obs
         }
 
-    def price_movement_pc(self, symbol, resolution, limit):
+    def price_movement_pc(self, df_for_all, symbol, resolution, limit):
         """
 
         Adding a Market Trend Filter is a sophisticated upgrade. Selling a strangle is a "Neutral" strategy,
@@ -179,7 +201,9 @@ class Market:
         Resolution: Supported intervals include 1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 6h, 1d
 
         """
-        candles = DataCollector().get_candles(symbol, resolution, limit)
+        # candles = DataCollector().get_candles(symbol, resolution, limit)
+        df_sorted = df_for_all.sort_values('time', ascending=True).copy()
+        candles = df_sorted.to_dict(orient='records')[-24:]
         closing_prices = [float(c['close']) for c in candles]
         current_price = closing_prices[-1]
         start_price = closing_prices[0]
@@ -190,5 +214,6 @@ class Market:
         self._loger_.info(f"📈 📊 {limit}h Price Movement: {abs(price_change_pct):.2f}%")
         return price_change_pct
 
-# result = Market().market_sideways('BTCUSD', '1h', 24)
-# pprint(result)
+
+result = Market().market_sideways('BTCUSD', '1h', 24)
+pprint(result)
