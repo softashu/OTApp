@@ -227,5 +227,5 @@ class Market:
         return price_change_pct
 
 
-result = Market().market_sideways('BTCUSD', '1h', 24)
-pprint(result)
+# result = Market().market_sideways('BTCUSD', '1h', 24)
+# pprint(result)
