@@ -3,21 +3,20 @@ from datetime import datetime, time as dtime
 
 from apscheduler.schedulers.blocking import BlockingScheduler
 
-from OTApp.Analyser import DataAnalyser, Trend
+from OTApp.Analyser import DataAnalyser
 from OTApp.Analyser.Trend import Market
 from OTApp.Configuration.AppConfig import Config
 from OTApp.DataCollectors.DeltaExchangeDataCollector import DataCollector
 from OTApp.Logger.Logger import AppLogger
 from OTApp.Margin.Margin import Margin
-from OTApp.Wallet.Wallet import Wallet
-from OTApp.settings import TIME_ZONE
 
 
 class BTC_15_Delta_Strangle:
     _loger_ = AppLogger().get_log()
+    __data_analyser__ = DataAnalyser
     CONFIG = {
         'START_TIME': "06:00",  # Entry time in IST (24h format)
-        'TRY_END_TIME': dtime(21, 15),  # Keep try for punching trade upto this 8:15 AM
+        'TRY_END_TIME': dtime(12, 15),  # Keep try for punching trade upto this 8:15 AM
         'TRAIL_FREQUENCY': 1,  # Trail frequency in minutes
         'GOAL_TARGET_PROFIT_INR': 33.24,
         # Your goal, actual  need to calculated as per premium collected with ration 2/3
@@ -41,10 +40,11 @@ class BTC_15_Delta_Strangle:
             try:
                 # checking for side way market
                 market_check = Market().market_sideways('BTCUSD', '1h', 24)
-                if market_check['strangle_points'] > 2:
+                # Will go ahead if strangle point > 2 only ...
+                if market_check['strangle_points'] >= 0:
                     self._loger_.critical(f"***Market side ways good to initiate trade***")
                     no_trade = True
-                    # 2. Fetch fresh data
+                    # 2. Fetch fresh option chain data
                     responses = DataCollector.fetch_btc_options(today=DataCollector.today)
                     options_list = DataAnalyser.DataAnalyser.filter_15_delta_options(jsonRespose=responses.json())
                     if len(options_list) == 2:
@@ -52,11 +52,19 @@ class BTC_15_Delta_Strangle:
                         # combine premium collection
 
                         # Need to check price matching condition before placing order
-                        leg_0_price_bid = float(options_list[0]['quotes']['best_bid'])
-                        leg_1_price_bid = float(options_list[1]['quotes']['best_bid'])
-
-                        leg_0_price_ask = float(options_list[0]['quotes']['best_ask'])
-                        leg_1_price_ask = float(options_list[1]['quotes']['best_ask'])
+                        price_match_response = DataAnalyser.DataAnalyser.option_price_matched(options_list)
+                        if not price_match_response['price_matched']:
+                            # Is the lager leg protected by Order Block
+                            ob_protection = DataAnalyser.DataAnalyser.protected_by_ob(leg=price_match_response[
+                                'larger_leg'], ob=market_check['order_block'])
+                            if not ob_protection['protected']:
+                                liquidity_sweep_protection = DataAnalyser.DataAnalyser.protected_by_liquidity_sweep(
+                                    leg=price_match_response[
+                                        'larger_leg'], liq_sweep=market_check['swings'])
+                                # Handle larger leg either by lowering down the delta or get the same priced leg
+                                managed_leg = DataAnalyser.DataAnalyser.filter_options(json_response=responses.json(),
+                                                                                       leg=price_match_response[
+                                                                                           'larger_leg'], delta=10)
 
                         """
                         Suppose if price does not match 
@@ -107,18 +115,19 @@ class BTC_15_Delta_Strangle:
                             # Save all market analysis data for later use
                             # Place order
                             # start trade monitoring
-
                             break
+                    else:
+                        self._loger_.warning(f" ⚠️ No Options Pair Found ")
 
                     # If you want to stop entirely for the day after the first successful
                     # data processing, you could 'break' here.
                     # Otherwise, it will re-fetch in 1 minute.
                     # Wait for 1 minute before the next attempt/recheck
-                    time.sleep(BTC_15_Delta_Strangle.CONFIG['TRAIL_FREQUENCY'] * 60 * 2)
+                    time.sleep(BTC_15_Delta_Strangle.CONFIG['TRAIL_FREQUENCY'] * 60 * 1)
                 else:
                     self._loger_.info(
                         f" Market does not looks side way ... will check in {BTC_15_Delta_Strangle.CONFIG['TRAIL_FREQUENCY'] * 5 * 60} Seconds...")
-                    time.sleep(BTC_15_Delta_Strangle.CONFIG['TRAIL_FREQUENCY'] * 60 * 5)
+                    time.sleep(BTC_15_Delta_Strangle.CONFIG['TRAIL_FREQUENCY'] * 60 * 3)
             except Exception as e:
                 self._loger_.error(
                     f"Error fetching data: {e}. Will retry in {BTC_15_Delta_Strangle.CONFIG['TRAIL_FREQUENCY']} minute.")
@@ -129,7 +138,7 @@ class BTC_15_Delta_Strangle:
 # --- Scheduler Setup ---
 scheduler = BlockingScheduler(timezone=Config.TIME_ZONE.zone)
 # This tells the scheduler to wake up at 06:00 every day
-scheduler.add_job(BTC_15_Delta_Strangle().trade_job, 'cron', hour=17, minute=00)
+scheduler.add_job(BTC_15_Delta_Strangle().trade_job, 'cron', hour=10, minute=51)
 AppLogger.logger.info("Scheduler active. The bot will check every minute between 06:00 and 08:15 IST daily.")
 try:
     scheduler.start()

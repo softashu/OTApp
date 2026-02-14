@@ -413,7 +413,6 @@ class Indicator:
                     is_mitigated = (df['high'].iloc[i + 1:] >= df['low'].iloc[i]).any()
                     if not is_mitigated:
                         obs.append({'type': 'BEARISH', 'top': df['high'].iloc[i], 'bottom': df['low'].iloc[i]})
-            ob = {}
             return obs[-1] if obs else None
         except Exception as ex:
             self._loger_.error(f"Error : While calculating Order Blocks : {ex}")
