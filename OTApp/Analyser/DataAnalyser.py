@@ -138,6 +138,18 @@ class DataAnalyser:
         Liquidity Sweep at High     Price wicks out and rejects.        ✅ Sell Calls. (The "Fake-out" is over).
         Price returns to Bullish OB Pullback to institutional buy zone. 🚫 Don't Sell Calls. (Expect a bounce).
 
+        How to use it :
+        --------------
+            # Condition  (Swings):  Is your Call Strike > last_swing_high?
+            #                       Is your Put Strike < last_swing_low?
+            #  And liquidity sweep
+            #  Check Sweeps: Did the price just "wick" through the Swing High and fail?
+            #                If YES, the 0.15 Delta Call is safer because the "Smart Money"
+                             just flushed out the buyers.
+
+            in simple term : Sell call if you found BEARISH_SWEEP,
+            #                Sell put if you found BULLISH_SWEEP,
+            #
         """
         # df_sorted = df_for_all.sort_values('time', ascending=True).copy()
         # df = df_sorted
@@ -146,10 +158,12 @@ class DataAnalyser:
         prev_close = df['close'].iloc[-2]
 
         # 🔴 Bearish Sweep (Buy side Liquidity Grab)
+        # Perfect time to sell the 0.15 Delta Call
         if curr_high > last_sh and curr_close < last_sh:
             return "BEARISH_SWEEP"
 
-        # 🟢 Bullish Sweep (Sellside Liquidity Grab)
+        # 🟢 Bullish Sweep (Sell side Liquidity Grab)
+        # Perfect time to sell the 0.15 Delta Put
         if curr_low < last_sl and curr_close > last_sl:
             return "BULLISH_SWEEP"
         return None
@@ -246,5 +260,47 @@ class DataAnalyser:
         return protected
 
     @classmethod
-    def protected_by_liquidity_sweep(cls, leg, liq_sweep):
-        pass
+    def protected_by_swings_sweep(cls, leg, swings_with_sweep):
+        """
+        # Is leg is protected by
+        # Condition  (Swings):  Is your Call Strike > last_swing_high?
+        #                       Is your Put Strike < last_swing_low?
+        #  And liquidity sweep
+        #  Check Sweeps: Did the price just "wick" through the Swing High and fail?
+        #                If YES, the 0.15 Delta Call is safer because the "Smart Money"
+                         just flushed out the buyers.
+
+        # swings structure with liquidity sweeps
+            {'swing_low': last_sl, 'swing_high': last_sh, 'liquidity_sweep': liquidity_sweep}
+        """
+        protected = False
+        leg_contract = leg['contract_type']
+        if not swings_with_sweep:
+            # No structural data found at all
+            cls._logger_.info(f"🔍 Leg {leg['symbol']} | No swing structure detected. Scanning further... 💨")
+        elif leg_contract == 'put_options' and swings_with_sweep['liquidity_sweep'] == 'BULLISH_SWEEP':
+            # Found a liquidity sweep, which is a strong reversal signal
+            cls._logger_.info(
+                f"🌊 BULLISH SWEEP DETECTED | Side: {leg_contract} | "
+                f"Market cleared liquidity. Checking swing protection... 🔍"
+            )
+            if float(leg['strike_price']) <= swings_with_sweep['swing_low']:
+                # The leg is safely tucked below the swing low
+                protected = True
+                cls._logger_.info(
+                    f"🛡️  PUT PROTECTED | {leg['symbol']} | "
+                    f"Strike {leg['strike_price']} is below Swing Low {swings_with_sweep['swing_low']} ✅"
+                )
+        elif leg_contract == 'call_options' and swings_with_sweep['liquidity_sweep'] == 'BEARISH_SWEEP':
+            # Found a liquidity sweep, which is a strong reversal signal
+            cls._logger_.info(
+                f"🌊 BEARISH SWEEP DETECTED | Side: {leg_contract} | "
+                f"Market cleared liquidity. Checking swing protection... 🔍"
+            )
+            if float(leg['strike_price']) >= swings_with_sweep['swing_high']:
+                protected = True
+                cls._logger_.info(
+                    f"🛡️  CALL PROTECTED | {leg['symbol']} | "
+                    f"Strike {leg['strike_price']} is above Swing high {swings_with_sweep['swing_high']} ✅"
+                )
+        return protected

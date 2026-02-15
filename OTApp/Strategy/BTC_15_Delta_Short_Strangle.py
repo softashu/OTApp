@@ -1,7 +1,9 @@
 import time
 from datetime import datetime, time as dtime
+from typing import Any
 
 from apscheduler.schedulers.blocking import BlockingScheduler
+from requests import Response
 
 from OTApp.Analyser import DataAnalyser
 from OTApp.Analyser.Trend import Market
@@ -41,81 +43,68 @@ class BTC_15_Delta_Strangle:
                 # checking for side way market
                 market_check = Market().market_sideways('BTCUSD', '1h', 24)
                 # Will go ahead if strangle point > 2 only ...
-                if market_check['strangle_points'] >= 0:
+                if market_check['strangle_points'] >= 2:
                     self._loger_.critical(f"***Market side ways good to initiate trade***")
-                    no_trade = True
+                    # # if no_trade false then goahead of trade
+                    # no_trade = True
                     # 2. Fetch fresh option chain data
                     responses = DataCollector.fetch_btc_options(today=DataCollector.today)
                     options_list = DataAnalyser.DataAnalyser.filter_15_delta_options(jsonRespose=responses.json())
                     if len(options_list) == 2:
-                        # Process the data ## calculating sl and lots as per max daily loss ------------
-                        # combine premium collection
-
                         # Need to check price matching condition before placing order
                         price_match_response = DataAnalyser.DataAnalyser.option_price_matched(options_list)
+                        """
+                           Suppose if price does not match 
+                            # Remaining case 
+                            1.1 check the trends in 12 h time frame
+                                1.1.1 Case study if trend is bearish on 12 h time frame, lower down the PE leg to match the price similarly for CE side
+                       """
                         if not price_match_response['price_matched']:
-                            # Is the lager leg protected by Order Block
-                            ob_protection = DataAnalyser.DataAnalyser.protected_by_ob(leg=price_match_response[
-                                'larger_leg'], ob=market_check['order_block'])
-                            if not ob_protection['protected']:
-                                liquidity_sweep_protection = DataAnalyser.DataAnalyser.protected_by_liquidity_sweep(
-                                    leg=price_match_response[
-                                        'larger_leg'], liq_sweep=market_check['swings'])
-                                # Handle larger leg either by lowering down the delta or get the same priced leg
-                                managed_leg = DataAnalyser.DataAnalyser.filter_options(json_response=responses.json(),
-                                                                                       leg=price_match_response[
-                                                                                           'larger_leg'], delta=10)
-
-                        """
-                        Suppose if price does not match 
-                        1. get the lower delta of that leg ---------recommendation for initial stage before going to
-                         lower delta check the trends in 12 h time frame
-                         1.1 Case study if trend is bearish on 12 h time frame lower down the PE leg to match the price similarly for CE side
-                         1.2 case just matched price in lower delta PE or CE accordingly which is higher
-                        
-                        2. second back test scenario keep stick with leg and trade with lower delta of opposite side 
-                        that have matched price -------when program became stable then try 
-                        
-                        """
-
-                        # is_price_matching(options_list)
-                        totalPremium = 0.0
-                        spot_price = 0.0
-                        leverage = 0
-                        max_sell_lots = BTC_15_Delta_Strangle.CONFIG['LOT_SIZE_BTC']
-                        for opt in options_list:
-                            self._loger_.info(f"Symbol: {opt['symbol']}")
-                            totalPremium += float(opt['quotes']['best_bid']) * BTC_15_Delta_Strangle.CONFIG[
-                                'LOT_SIZE_BTC']
-                            spot_price = opt['spot_price']
-                            leverage = opt['leverage']
-                        self._loger_.info(f"Total Premium {totalPremium} , so max SL is {totalPremium * 2 / 3}")
-                        # Max loss in day is 2000 INR and loss in 5 lots is {totalPremium * 2 / 3}
-                        max_sell_lots = (5 / (totalPremium * 2 / 3)) * BTC_15_Delta_Strangle.CONFIG[
-                            'GOAL_STOP_LOSS_INR']
-                        self._loger_.info(
-                            f"Maximum lots for {BTC_15_Delta_Strangle.CONFIG['GOAL_STOP_LOSS_INR']} loss is {max_sell_lots}")
-
+                            options_list = self.handle_un_matched_legs(market_check=market_check,
+                                                                       options_list=options_list,
+                                                                       price_match_response=price_match_response,
+                                                                       responses=responses.json())
                         # Volatility Crush check
                         ivr = DataAnalyser.DataAnalyser.volatility_attractive(json_response=responses.json())
                         if ivr < 45.0:
-                            self._loger_.warning(f"⚠️ IV : {ivr} is too low. Premiums are cheap; risk of IV spike is "
-                                                 f"high. Skipping.")
-                        if ivr > 85.0:
+                            if ivr < 45.0:
+                                self._loger_.critical(
+                                    f"⚠️  IV RANK TOO LOW: {ivr:.2f} | "
+                                    f"Status: 🏷️ Cheap Premiums / 🧨 High Spike Risk | "
+                                    f"Action: Skipping Trade for Capital Preservation 🛑"
+                                )
+                        elif ivr > 85.0:
                             self._loger_.info(
                                 f"🔥 IV : {ivr} is extremely high. High premium, but watch for extreme price moves!")
-                            no_trade = False
+                            # calculating sl and lots as per max daily loss
+                            # combine premium collection
+                            total_premium = 0.0
+                            spot_price = 0.0
+                            leverage = 0
+                            max_sell_lots = BTC_15_Delta_Strangle.CONFIG['LOT_SIZE_BTC']
+                            for opt in options_list:
+                                self._loger_.info(f"Symbol: {opt['symbol']}")
+                                total_premium += float(opt['quotes']['best_bid']) * BTC_15_Delta_Strangle.CONFIG[
+                                    'LOT_SIZE_BTC']
+                                spot_price = opt['spot_price']
+                                leverage = opt['leverage']
+                            self._loger_.info(f"Total Premium {total_premium} , so max SL is {total_premium * 2 / 3}")
+                            # Max loss in day is 2000 INR and loss in 5 lots is {totalPremium * 2 / 3}
+                            max_sell_lots = (5 / (total_premium * 2 / 3)) * BTC_15_Delta_Strangle.CONFIG[
+                                'GOAL_STOP_LOSS_INR']
+                            self._loger_.info(
+                                f"Maximum lots for {BTC_15_Delta_Strangle.CONFIG['GOAL_STOP_LOSS_INR']} loss is {max_sell_lots}")
+                            # Margin calculation ------------
+                            margin_sufficient = Margin().margin_sufficient(leverage, spot_price, total_premium,
+                                                                           BTC_15_Delta_Strangle.CONFIG['LOT_SIZE_BTC'])
+                            # # Volatility Crush check
+                            # ivr = DataAnalyser.DataAnalyser.volatility_attractive(jsonRespose=responses.json())
+                            if margin_sufficient:
+                                # Save all market analysis data for later use
 
-                        # Margin calculation ------------
-                        margin_sufficient = Margin().margin_sufficient(leverage, spot_price, totalPremium,
-                                                                       BTC_15_Delta_Strangle.CONFIG['LOT_SIZE_BTC'])
-                        # # Volatility Crush check
-                        # ivr = DataAnalyser.DataAnalyser.volatility_attractive(jsonRespose=responses.json())
-                        if margin_sufficient and not no_trade:
-                            # Save all market analysis data for later use
-                            # Place order
-                            # start trade monitoring
-                            break
+                                # Place order
+                                # start trade monitoring
+                                break
                     else:
                         self._loger_.warning(f" ⚠️ No Options Pair Found ")
 
@@ -133,6 +122,41 @@ class BTC_15_Delta_Strangle:
                     f"Error fetching data: {e}. Will retry in {BTC_15_Delta_Strangle.CONFIG['TRAIL_FREQUENCY']} minute.")
                 # 3. Wait for 1 minute before the next attempt/recheck
                 time.sleep(BTC_15_Delta_Strangle.CONFIG['TRAIL_FREQUENCY'] * 60)
+
+    def handle_un_matched_legs(self, options_list, market_check,
+                               price_match_response,
+                               responses):
+        # Is the lager leg protected by Order Block
+        ob_protection = DataAnalyser.DataAnalyser.protected_by_ob(leg=price_match_response[
+            'larger_leg'], ob=market_check['order_block'])
+        if not ob_protection:
+            """
+            # Is leg is protected by
+            # Condition  (Swings):  Is your Call Strike > last_swing_high?
+            #                       Is your Put Strike < last_swing_low?
+            #  And liquidity sweep
+            #  Check Sweeps: Did the price just "wick" through the Swing High and fail?
+            #                If YES, the 0.15 Delta Call is safer because the "Smart Money" 
+                             just flushed out the buyers.
+            # 
+            """
+            swings_sweep_protection = DataAnalyser.DataAnalyser.protected_by_swings_sweep(
+                leg=price_match_response[
+                    'larger_leg'], swings_with_sweep=market_check['swings'])
+            if not swings_sweep_protection:
+                # Handle larger leg either by lowering down the delta or get the same priced leg
+                self._loger_.warning(
+                    f" larger price leg = {price_match_response['larger_leg']['strike_price']}"
+                    f" does not have protection ... find the lower leg ...")
+                managed_leg = DataAnalyser.DataAnalyser.filter_options(
+                    json_response=responses.json(),
+                    leg=price_match_response[
+                        'larger_leg'], delta=10)
+                #  if managed leg found then removing the larger leg from the list and adding this leg
+                options_list.remove(price_match_response[
+                                        'larger_leg'])
+                options_list.append(managed_leg)
+        return options_list
 
 
 # --- Scheduler Setup ---
