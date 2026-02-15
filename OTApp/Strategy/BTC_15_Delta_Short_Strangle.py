@@ -11,6 +11,7 @@ from OTApp.Configuration.AppConfig import Config
 from OTApp.DataCollectors.DeltaExchangeDataCollector import DataCollector
 from OTApp.Logger.Logger import AppLogger
 from OTApp.Margin.Margin import Margin
+from OTApp.Persistence.History.TradeMunshi import TradeMunshi
 
 
 class BTC_15_Delta_Strangle:
@@ -18,7 +19,7 @@ class BTC_15_Delta_Strangle:
     __data_analyser__ = DataAnalyser
     CONFIG = {
         'START_TIME': "06:00",  # Entry time in IST (24h format)
-        'TRY_END_TIME': dtime(12, 15),  # Keep try for punching trade upto this 8:15 AM
+        'TRY_END_TIME': dtime(21, 15),  # Keep try for punching trade upto this 8:15 AM
         'TRAIL_FREQUENCY': 1,  # Trail frequency in minutes
         'GOAL_TARGET_PROFIT_INR': 33.24,
         # Your goal, actual  need to calculated as per premium collected with ration 2/3
@@ -44,6 +45,7 @@ class BTC_15_Delta_Strangle:
                 market_check = Market().market_sideways('BTCUSD', '1h', 24)
                 # Will go ahead if strangle point > 2 only ...
                 if market_check['strangle_points'] >= 2:
+                    trade_record = None
                     self._loger_.critical(f"***Market side ways good to initiate trade***")
                     # # if no_trade false then goahead of trade
                     # no_trade = True
@@ -51,8 +53,10 @@ class BTC_15_Delta_Strangle:
                     responses = DataCollector.fetch_btc_options(today=DataCollector.today)
                     options_list = DataAnalyser.DataAnalyser.filter_15_delta_options(jsonRespose=responses.json())
                     if len(options_list) == 2:
+                        trade_record = {'market_check': market_check, 'initial_legs': options_list.copy()}
                         # Need to check price matching condition before placing order
                         price_match_response = DataAnalyser.DataAnalyser.option_price_matched(options_list)
+                        trade_record.update({'price_match_response': price_match_response})
                         """
                            Suppose if price does not match 
                             # Remaining case 
@@ -60,12 +64,16 @@ class BTC_15_Delta_Strangle:
                                 1.1.1 Case study if trend is bearish on 12 h time frame, lower down the PE leg to match the price similarly for CE side
                        """
                         if not price_match_response['price_matched']:
-                            options_list = self.handle_un_matched_legs(market_check=market_check,
-                                                                       options_list=options_list,
-                                                                       price_match_response=price_match_response,
-                                                                       responses=responses.json())
+                            un_matched_leg_handle_resp = self.handle_un_matched_legs(market_check=market_check,
+                                                                                     options_list=options_list,
+                                                                                     price_match_response=price_match_response,
+                                                                                     responses=responses.json())
+                            options_list = un_matched_leg_handle_resp['final_legs']
+                            trade_record.update({'un_matched_leg_handle_resp': un_matched_leg_handle_resp})
+
                         # Volatility Crush check
                         ivr = DataAnalyser.DataAnalyser.volatility_attractive(json_response=responses.json())
+                        trade_record.update({'ivr': ivr})
                         if ivr < 45.0:
                             if ivr < 45.0:
                                 self._loger_.critical(
@@ -97,11 +105,10 @@ class BTC_15_Delta_Strangle:
                             # Margin calculation ------------
                             margin_sufficient = Margin().margin_sufficient(leverage, spot_price, total_premium,
                                                                            BTC_15_Delta_Strangle.CONFIG['LOT_SIZE_BTC'])
-                            # # Volatility Crush check
-                            # ivr = DataAnalyser.DataAnalyser.volatility_attractive(jsonRespose=responses.json())
+                            trade_record.update({'margin_sufficient': margin_sufficient})
                             if margin_sufficient:
                                 # Save all market analysis data for later use
-
+                                TradeMunshi().save_trade_snapshot(trade_record)
                                 # Place order
                                 # start trade monitoring
                                 break
@@ -156,13 +163,14 @@ class BTC_15_Delta_Strangle:
                 options_list.remove(price_match_response[
                                         'larger_leg'])
                 options_list.append(managed_leg)
-        return options_list
+        return {'final_legs': options_list, 'ob_protection': ob_protection,
+                'swings_sweep_protection': swings_sweep_protection}
 
 
 # --- Scheduler Setup ---
 scheduler = BlockingScheduler(timezone=Config.TIME_ZONE.zone)
 # This tells the scheduler to wake up at 06:00 every day
-scheduler.add_job(BTC_15_Delta_Strangle().trade_job, 'cron', hour=10, minute=51)
+scheduler.add_job(BTC_15_Delta_Strangle().trade_job, 'cron', hour=17, minute=49)
 AppLogger.logger.info("Scheduler active. The bot will check every minute between 06:00 and 08:15 IST daily.")
 try:
     scheduler.start()
