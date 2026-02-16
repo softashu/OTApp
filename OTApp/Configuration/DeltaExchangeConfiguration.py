@@ -40,3 +40,7 @@ def API_SECRET():
 
 def BASE_URL():
     return DeltaExchangeConfiguration.BASE_URL
+
+
+def API_VERSION():
+    return DeltaExchangeConfiguration.API_VERSION

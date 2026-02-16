@@ -1,8 +1,7 @@
-import hashlib
-import hmac
-import time
 from pprint import pprint
 from typing import Any
+
+import requests
 
 from OTApp.Configuration import DeltaExchangeConfiguration
 from OTApp.Logger.Logger import AppLogger
@@ -18,23 +17,46 @@ class OrderManager:
     def place_order(self, trade_record):
         path = '/orders'
         req_method = 'POST'
-        req_query_string = ''  # Empty for this request
-        signature, timestamp = APIRequestSecurityManager.build_payload_signature(path, req_method, req_query_string)
-
-        # 4. Set Headers
-        headers = {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'api-key': DeltaExchangeConfiguration.API_KEY(),
-            'signature': signature,
-            'timestamp': timestamp
-        }
-        # preparing the request body and placing order at time
+        # 1. Determine which legs to execute
         legs = self.find_legs(trade_record)
-        orders = {}
+        if not legs:
+            self._logger_.error("❌ EXECUTION ABORTED | No valid legs found in trade_record.")
+            return []
+        req_query_string = ''  # Empty for this request
+        # preparing the request body and placing order at time
+        executed_orders = []
         for leg in legs:
-            order = self.prepare_order(leg, trade_record)
-            pprint(order)
+            symbol = leg.get('symbol', 'Unknown')
+            # 2. Prepare the specific order dictionary (including SL and Trigger Method)
+            order_payload = self.prepare_order(leg, trade_record)
+            # 3. Regenerate signature/timestamp for each request (best practice for high frequency)
+            signature, timestamp = APIRequestSecurityManager.build_payload_signature(path, req_method, req_query_string)
+            # 4. Set Headers
+            headers = {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'api-key': DeltaExchangeConfiguration.API_KEY(),
+                'signature': signature,
+                'timestamp': timestamp
+            }
+            try:
+                self._logger_.info(
+                    f"🚀 SENDING ORDER | {symbol} | Qty: {order_payload.get('size')} | Type: {order_payload.get('order_type')}...")
+                # 4. Make the Request - Passing the order_payload as JSON
+                place_order_response = requests.post(
+                    f"{DeltaExchangeConfiguration.BASE_URL()}/{DeltaExchangeConfiguration.API_VERSION()}{path}",
+                    json=order_payload,
+                    headers=headers,
+                    timeout=10
+                )
+                place_order_response_data = place_order_response.json()
+
+
+
+            except Exception as e:
+                self._logger_.error(f"🚨 NETWORK ERROR | {symbol} | Failed to reach Delta Exchange: {str(e)}")
+                executed_orders.append({"status": "NETWORK_FAILURE", "payload": order_payload, "error": str(e)})
+        return executed_orders
 
     def prepare_order(self, leg, trade_record) -> dict[str, str | Any]:
         # trigger based on Stop order trigger others are  mark_price/last_traded_price/spot_price
