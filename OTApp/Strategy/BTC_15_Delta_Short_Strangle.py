@@ -11,6 +11,7 @@ from OTApp.Configuration.AppConfig import Config
 from OTApp.DataCollectors.DeltaExchangeDataCollector import DataCollector
 from OTApp.Logger.Logger import AppLogger
 from OTApp.Margin.Margin import Margin
+from OTApp.Order.OrderManager import OrderManager
 from OTApp.Persistence.History.TradeMunshi import TradeMunshi
 
 
@@ -102,14 +103,22 @@ class BTC_15_Delta_Strangle:
                                 'GOAL_STOP_LOSS_INR']
                             self._loger_.info(
                                 f"Maximum lots for {BTC_15_Delta_Strangle.CONFIG['GOAL_STOP_LOSS_INR']} loss is {max_sell_lots}")
+                            trade = {"total_premium": total_premium, "max_sell_lots": max_sell_lots,
+                                     "max_trade_sl": total_premium * 2 / 3}
+                            trade_record.update({'trade': trade})
+
                             # Margin calculation ------------
                             margin_sufficient = Margin().margin_sufficient(leverage, spot_price, total_premium,
                                                                            BTC_15_Delta_Strangle.CONFIG['LOT_SIZE_BTC'])
                             trade_record.update({'margin_sufficient': margin_sufficient})
                             if margin_sufficient:
+                                # Place order
+                                place_trade_resp = OrderManager().place_order(trade_record)
+
+                                trade_record.update({'place_trade_resp': place_trade_resp})
                                 # Save all market analysis data for later use
                                 TradeMunshi().save_trade_snapshot(trade_record)
-                                # Place order
+
                                 # start trade monitoring
                                 break
                     else:
@@ -136,6 +145,7 @@ class BTC_15_Delta_Strangle:
         # Is the lager leg protected by Order Block
         ob_protection = DataAnalyser.DataAnalyser.protected_by_ob(leg=price_match_response[
             'larger_leg'], ob=market_check['order_block'])
+        swings_sweep_protection = None
         if not ob_protection:
             """
             # Is leg is protected by
