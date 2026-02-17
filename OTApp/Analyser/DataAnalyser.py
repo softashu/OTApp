@@ -211,10 +211,16 @@ class DataAnalyser:
         Finds a leg on the specified leg side that is almost matched the target_price,
         starting from 15 delta and moving further OTM.
         """
+
+        # Check if 'result' exists and is not empty
+        all_options = json_response.get('result', [])
+        if not all_options:
+            return []
         # Filter legs for the correct side, sorted by delta descending (starting at 15)
-        potential_legs = [p for p in json_response if
+        potential_legs = [p for p in all_options if
                           p['contract_type'] == leg['contract_type'] and
                           float(p['greeks']['delta']) < 0.15]
+
         potential_legs.sort(key=lambda x: float(x['greeks']['delta']), reverse=True)
 
         for leg in potential_legs:

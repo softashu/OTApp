@@ -47,7 +47,8 @@ class BTC_15_Delta_Strangle:
                 # Will go ahead if strangle point > 2 only ...
                 if market_check['strangle_points'] >= 2:
                     trade_record = None
-                    self._loger_.critical(f"***Market side ways good to initiate trade***")
+                    self._loger_.critical(
+                        f"***Market side ways with strangle_points {market_check['strangle_points']} good to initiate trade***")
                     # # if no_trade false then goahead of trade
                     # no_trade = True
                     # 2. Fetch fresh option chain data
@@ -76,12 +77,11 @@ class BTC_15_Delta_Strangle:
                         ivr = DataAnalyser.DataAnalyser.volatility_attractive(json_response=responses.json())
                         trade_record.update({'ivr': ivr})
                         if ivr < 45.0:
-                            if ivr < 45.0:
-                                self._loger_.critical(
-                                    f"⚠️  IV RANK TOO LOW: {ivr:.2f} | "
-                                    f"Status: 🏷️ Cheap Premiums / 🧨 High Spike Risk | "
-                                    f"Action: Skipping Trade for Capital Preservation 🛑"
-                                )
+                            self._loger_.critical(
+                                f"⚠️  IV RANK TOO LOW: {ivr:.2f} | "
+                                f"Status: 🏷️ Cheap Premiums / 🧨 High Spike Risk | "
+                                f"Action: Skipping Trade for Capital Preservation 🛑"
+                            )
                         elif ivr > 85.0:
                             self._loger_.info(
                                 f"🔥 IV : {ivr} is extremely high. High premium, but watch for extreme price moves!")
@@ -114,11 +114,10 @@ class BTC_15_Delta_Strangle:
                             if margin_sufficient:
                                 # Place order
                                 place_trade_resp = OrderManager().place_order(trade_record)
-
-                                trade_record.update({'place_trade_resp': place_trade_resp})
+                                # Update trade_record with the actual execution results for history analysis
+                                trade_record['execution_history'] = place_trade_resp
                                 # Save all market analysis data for later use
                                 TradeMunshi().save_trade_snapshot(trade_record)
-
                                 # start trade monitoring
                                 break
                     else:
@@ -142,45 +141,49 @@ class BTC_15_Delta_Strangle:
     def handle_un_matched_legs(self, options_list, market_check,
                                price_match_response,
                                responses):
-        # Is the lager leg protected by Order Block
-        ob_protection = DataAnalyser.DataAnalyser.protected_by_ob(leg=price_match_response[
-            'larger_leg'], ob=market_check['order_block'])
-        swings_sweep_protection = None
-        if not ob_protection:
-            """
-            # Is leg is protected by
-            # Condition  (Swings):  Is your Call Strike > last_swing_high?
-            #                       Is your Put Strike < last_swing_low?
-            #  And liquidity sweep
-            #  Check Sweeps: Did the price just "wick" through the Swing High and fail?
-            #                If YES, the 0.15 Delta Call is safer because the "Smart Money" 
-                             just flushed out the buyers.
-            # 
-            """
-            swings_sweep_protection = DataAnalyser.DataAnalyser.protected_by_swings_sweep(
-                leg=price_match_response[
-                    'larger_leg'], swings_with_sweep=market_check['swings'])
-            if not swings_sweep_protection:
-                # Handle larger leg either by lowering down the delta or get the same priced leg
-                self._loger_.warning(
-                    f" larger price leg = {price_match_response['larger_leg']['strike_price']}"
-                    f" does not have protection ... find the lower leg ...")
-                managed_leg = DataAnalyser.DataAnalyser.filter_options(
-                    json_response=responses.json(),
+        try:
+            # Is the lager leg protected by Order Block
+            ob_protection = DataAnalyser.DataAnalyser.protected_by_ob(leg=price_match_response[
+                'larger_leg'], ob=market_check['order_block'])
+            swings_sweep_protection = None
+            if not ob_protection:
+                """
+                # Is leg is protected by
+                # Condition  (Swings):  Is your Call Strike > last_swing_high?
+                #                       Is your Put Strike < last_swing_low?
+                #  And liquidity sweep
+                #  Check Sweeps: Did the price just "wick" through the Swing High and fail?
+                #                If YES, the 0.15 Delta Call is safer because the "Smart Money" 
+                                 just flushed out the buyers.
+                # 
+                """
+                swings_sweep_protection = DataAnalyser.DataAnalyser.protected_by_swings_sweep(
                     leg=price_match_response[
-                        'larger_leg'], delta=10)
-                #  if managed leg found then removing the larger leg from the list and adding this leg
-                options_list.remove(price_match_response[
-                                        'larger_leg'])
-                options_list.append(managed_leg)
-        return {'final_legs': options_list, 'ob_protection': ob_protection,
-                'swings_sweep_protection': swings_sweep_protection}
+                        'larger_leg'], swings_with_sweep=market_check['swings'])
+                if not swings_sweep_protection:
+                    # Handle larger leg either by lowering down the delta or get the same priced leg
+                    self._loger_.warning(
+                        f" larger price leg = {price_match_response['larger_leg']['strike_price']}"
+                        f" does not have protection ... find the lower leg ...")
+                    managed_leg = DataAnalyser.DataAnalyser.filter_options(
+                        json_response=responses,
+                        leg=price_match_response[
+                            'larger_leg'], delta=10)
+
+                    #  if managed leg found then removing the larger leg from the list and adding this leg
+                    options_list.remove(price_match_response[
+                                            'larger_leg'])
+                    options_list.append(managed_leg)
+            return {'final_legs': options_list, 'ob_protection': ob_protection,
+                    'swings_sweep_protection': swings_sweep_protection}
+        except Exception as e:
+            self._loger_.error(f"Error while handling ")
 
 
 # --- Scheduler Setup ---
 scheduler = BlockingScheduler(timezone=Config.TIME_ZONE.zone)
 # This tells the scheduler to wake up at 06:00 every day
-scheduler.add_job(BTC_15_Delta_Strangle().trade_job, 'cron', hour=17, minute=49)
+scheduler.add_job(BTC_15_Delta_Strangle().trade_job, 'cron', hour=10, minute=10)
 AppLogger.logger.info("Scheduler active. The bot will check every minute between 06:00 and 08:15 IST daily.")
 try:
     scheduler.start()
