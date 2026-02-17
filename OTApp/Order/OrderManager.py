@@ -30,7 +30,8 @@ class OrderManager:
             # 2. Prepare the specific order dictionary (including SL and Trigger Method)
             order_payload = self.prepare_order(leg, trade_record)
             # 3. Regenerate signature/timestamp for each request (best practice for high frequency)
-            signature, timestamp = APIRequestSecurityManager.build_payload_signature(path, req_method, req_query_string)
+            signature, timestamp = APIRequestSecurityManager().build_payload_signature(path, req_method,
+                                                                                       req_query_string)
             # 4. Set Headers
             headers = {
                 'Content-Type': 'application/json',
@@ -117,10 +118,10 @@ class OrderManager:
         return {
             "product_id": leg['product_id'],
             "product_symbol": leg['symbol'],
-            "size": trade_record['trade']['max_sell_lots'],
+            "size": int(trade_record['trade']['max_sell_lots']),
             "side": "sell",
             "order_type": "limit",
-            "limit_price": float(leg['best_bid']),
+            "limit_price": float(leg['quotes']['best_bid']),
             "time_in_force": "gtc",
             "stop_order_type": "stop_loss",
             "stop_trigger_method": stop_trigger_method,
@@ -128,7 +129,6 @@ class OrderManager:
             "client_order_id": "15_Delta_" + leg_contract_type,  # <--- YOUR TRACKING ID
             "reduce_only": True
         }
-
 
     def sl_by_ob(self, leg, order_block) -> float:
         """
@@ -164,7 +164,6 @@ class OrderManager:
                 f"Action: Reverting to default risk params 🔄"
             )
         return sl_price
-
 
     def find_legs(self, trade_record):
         """
