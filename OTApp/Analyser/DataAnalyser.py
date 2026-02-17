@@ -223,14 +223,18 @@ class DataAnalyser:
 
         potential_legs.sort(key=lambda x: float(x['greeks']['delta']), reverse=True)
 
-        for leg in potential_legs:
+        for potential_leg in potential_legs:
             leg_price = float(leg.get('mark_price', 0))
-            if math.isclose(leg_price, leg['mark_price'], abs_tol=5.0):
-                cls._logger_.info(
-                    f"🎯 Selected Lower-Price Leg: {leg['symbol']} | "
-                    f"Δ: {leg['greeks']['delta']} 📉 | Price: {leg_price} 💰"
-                )
-                return leg  # Found the price-matched lower-delta leg
+            try:
+                if math.isclose(leg_price, float(potential_leg['mark_price']), abs_tol=5.0):
+                    cls._logger_.info(
+                        f"🎯 Selected Lower-Price Leg: {potential_leg['symbol']} | "
+                        f"Δ: {potential_leg['greeks']['delta']} 📉 | Price: {float(potential_leg['mark_price'])} 💰"
+                    )
+                    return potential_leg  # Found the price-matched lower-delta leg
+            except Exception as e:
+                cls._logger_.error(f"Error found {e}")
+                return None
         return potential_legs[-1]  # Fallback to the furthest OTM if no match
 
     @classmethod

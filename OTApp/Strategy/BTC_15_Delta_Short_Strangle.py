@@ -183,7 +183,7 @@ class BTC_15_Delta_Strangle:
 # --- Scheduler Setup ---
 scheduler = BlockingScheduler(timezone=Config.TIME_ZONE.zone)
 # This tells the scheduler to wake up at 06:00 every day
-scheduler.add_job(BTC_15_Delta_Strangle().trade_job, 'cron', hour=10, minute=10)
+scheduler.add_job(BTC_15_Delta_Strangle().trade_job, 'cron', hour=12, minute=20)
 AppLogger.logger.info("Scheduler active. The bot will check every minute between 06:00 and 08:15 IST daily.")
 try:
     scheduler.start()
