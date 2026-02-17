@@ -56,7 +56,8 @@ class DataAnalyser:
                 symbol = option.get("symbol", "N/A")
                 # Check if the prices are within the specified interval
                 if abs(strike - spot) <= 200:
-                    mark_iv = option['quotes']['mark_iv']
+                    mark_iv = float(option['quotes']['mark_iv'])
+                    break
                     # below commented code is for testing purpose
                     # matched_list.append({
                     #     "symbol": symbol,
