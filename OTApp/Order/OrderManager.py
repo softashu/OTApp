@@ -1,3 +1,4 @@
+import math
 from pprint import pprint
 from typing import Any
 
@@ -15,7 +16,7 @@ class OrderManager:
         pass
 
     def place_order(self, trade_record):
-        path = '/orders'
+        path = DeltaExchangeConfiguration.API_VERSION() + '/orders'
         req_method = 'POST'
         # 1. Determine which legs to execute
         legs = self.find_legs(trade_record)
@@ -31,7 +32,7 @@ class OrderManager:
             order_payload = self.prepare_order(leg, trade_record)
             # 3. Regenerate signature/timestamp for each request (best practice for high frequency)
             signature, timestamp = APIRequestSecurityManager().build_payload_signature(path, req_method,
-                                                                                       req_query_string)
+                                                                                       req_query_string, order_payload)
             # 4. Set Headers
             headers = {
                 'Content-Type': 'application/json',
@@ -45,14 +46,20 @@ class OrderManager:
                     f"🚀 SENDING ORDER | {symbol} | Qty: {order_payload.get('size')} | Type: {order_payload.get('order_type')}...")
                 # 4. Make the Request - Passing the order_payload as JSON
                 place_order_response = requests.post(
-                    f"{DeltaExchangeConfiguration.BASE_URL()}/{DeltaExchangeConfiguration.API_VERSION()}{path}",
+                    f"{DeltaExchangeConfiguration.BASE_URL()}{path}",
                     json=order_payload,
                     headers=headers,
                     timeout=10
                 )
                 place_order_response_data = place_order_response.json()
-                if place_order_response_data.status_code in [200, 201]:
-                    self._logger_.info(f"✅ ORDER PLACED | {symbol} | ID: {place_order_response_data.get('id')} 💰")
+
+                if place_order_response.status_code in [200, 201]:
+                    response_data = place_order_response_data['result']
+                    self._logger_.info(
+                        f"✅ ORDER ACCEPTED | ID: {response_data['id']} | {response_data['product_symbol']} \n"
+                        f"📍 Type: {response_data['stop_order_type']} | State: {response_data['state'].upper()} \n"
+                        f"💰 Stop Price: {response_data['stop_price']} | Trigger: {response_data['stop_trigger_method']}"
+                    )
                     executed_orders.append(
                         {"status": "SUCCESS", "payload": order_payload, "response": place_order_response_data})
                 else:
@@ -120,13 +127,14 @@ class OrderManager:
             "product_symbol": leg['symbol'],
             "size": int(trade_record['trade']['max_sell_lots']),
             "side": "sell",
-            "order_type": "limit",
+            "order_type": "limit_order",
             "limit_price": float(leg['quotes']['best_bid']),
             "time_in_force": "gtc",
-            "stop_order_type": "stop_loss",
+            "stop_order_type": "stop_loss_order",
             "stop_trigger_method": stop_trigger_method,
-            "stop_price": leg_sl,
+            "stop_price": self.round_to_tick(leg_sl, leg['tick_size']),
             "client_order_id": "15_Delta_" + leg_contract_type,  # <--- YOUR TRACKING ID
+            "post_only": False,
             "reduce_only": True
         }
 
@@ -205,3 +213,12 @@ class OrderManager:
                 if strike >= sh_high:
                     sl_price = sh_high
         return sl_price
+
+    def round_to_tick(self, price, tick_size):
+        """
+        Rounds a price to the nearest valid tick size.
+        Example: price=101.1274, tick_size=0.1 -> 101.1
+        """
+        if not tick_size or tick_size <= 0:
+            return round(price, 2)  # Fallback
+        return round(math.floor(price / tick_size) * tick_size, 8)

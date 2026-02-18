@@ -8,10 +8,12 @@ class DataAnalyser:
     _logger_ = AppLogger().get_log()
 
     @classmethod
-    def filter_15_delta_options(cls, jsonRespose):
+    def filter_15_delta_options(cls, jsonRespose, target_delta):
         # Filter for Delta 0.15 option
+        if target_delta is None:
+            target_delta = DataAnalyser.TARGET_DELTA
         btc_options = [p for p in jsonRespose['result'] if
-                       math.isclose(abs(float(p['greeks']['delta'])), DataAnalyser.TARGET_DELTA, abs_tol=0.01)]
+                       math.isclose(abs(float(p['greeks']['delta'])), target_delta, abs_tol=0.01)]
         # print(f"Total BTC options: {len(btc_options)}")
         if (len(btc_options)) < 2:
             # Logger.AppLogger.logger.warning(f"System not able to get pair of {DataAnalyser.TARGET_DELTA} delta")
@@ -46,8 +48,32 @@ class DataAnalyser:
 
     @classmethod
     def volatility_attractive(cls, json_response):
+        """
+        IVR Range,                          Market State,                       Action Recommendation
+            0 - 25,                             Crush / Consolidation,              Avoid Selling. Premiums are too low for the risk.
+            25 - 50,                            Normal,"Conservative.               Use wider strikes (e.g., 10-12 Delta)."
+            50 - 75,                            High Volatility,                    "Aggressive Selling. This is where the best ""Edge"" is."
+            > 75,                               Extreme Panic,                      "High Risk. Premium is massive, but ""Gamma Risk"" (price moving too fast) is huge."
+
+        Quantitative Implementation Table
+            If you are building an automated screener, use these specific Delta ranges to balance the "Edge" mentioned in your table.
+
+        IVR Range,      Action,         Recommended Delta (δ),              Probability of Profit (Approx)
+        0 - 25,           Pass,                 N/A,                                Risk > Reward
+        25 - 50,        Conservative,       0.10 to 0.12,                           ~88% - 90%
+        50 - 75,        Aggressive,         0.16 to 0.20,                           ~80% - 84%
+        > 75,           Defensive,          0.05 to 0.08,                           ~92% - 95%
+
+
+        :param json_response:
+        :return:
+        """
         # Filter for ATM option
         mark_iv = 0.0
+        target_delta = None
+        market_state = 'RAM_JANE'
+        action = 'RAM_JANE'
+
         for option in json_response.get("result", []):
             try:
                 # Extract and convert prices to float
@@ -56,19 +82,37 @@ class DataAnalyser:
                 symbol = option.get("symbol", "N/A")
                 # Check if the prices are within the specified interval
                 if abs(strike - spot) <= 200:
-                    mark_iv = float(option['quotes']['mark_iv'])
+                    mark_iv = float(option['quotes']['mark_iv']) * 100
+                    if mark_iv < 25:
+                        market_state = 'Crush/Consolidation'
+                        action = 'Avoid Selling / Wait for expansion'
+                    elif 25 <= mark_iv < 50:
+                        market_state = 'Normal'
+                        action = 'Conservative Selling'
+                        target_delta = .12  # commenting till debugging
+                        # target_delta = .15
+                    elif 50 <= mark_iv <= 90:
+                        market_state = 'High Volatility'
+                        action = 'Standard/Aggressive Selling'
+                        target_delta = .16
+                    elif mark_iv > 90:
+                        market_state = 'Extreme Panic'
+                        action = 'High Risk / Managed Entry'
+                        target_delta = .07
+                    #     Breaking the loop
                     break
-                    # below commented code is for testing purpose
-                    # matched_list.append({
-                    #     "symbol": symbol,
-                    #     "strike_price": strike,
-                    #     "spot_price": spot,
-                    #     "mark_iv": mark_iv,
-                    #     "difference": round(abs(strike - spot), 2)
-                    # })
+
+                # below commented code is for testing purpose
+                # matched_list.append({
+                #     "symbol": symbol,
+                #     "strike_price": strike,
+                #     "spot_price": spot,
+                #     "mark_iv": mark_iv,
+                #     "difference": round(abs(strike - spot), 2)
+                # })
             except (ValueError, TypeError):
                 cls._logger_.error(f"Got error while analysing the IV crash...")
-        return mark_iv * 100
+        return {'market_state': market_state, 'action': action, 'target_delta': target_delta, 'ivr': mark_iv}
 
     def evaluate_strangle_entry(self, validated_ob, current_price, call_strike, put_strike):
         """

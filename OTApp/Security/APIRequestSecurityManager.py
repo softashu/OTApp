@@ -1,12 +1,14 @@
 import hashlib
 import hmac
+import json
 import time
 
 from OTApp.Configuration import DeltaExchangeConfiguration
 
 
 class APIRequestSecurityManager:
-    def build_payload_signature(self, PATH: str, req_method: str, req_query_string: str) -> tuple[str, str]:
+    def build_payload_signature(self, PATH: str, req_method: str, req_query_string: str, order_payload) -> tuple[
+        str, str]:
         # 1. Generate the Timestamp (Unix seconds)
         timestamp = str(int(time.time()))
 
@@ -14,7 +16,7 @@ class APIRequestSecurityManager:
         # Format: method + timestamp + path + query_string + body
         method = req_method
         query_string = req_query_string
-        payload = method + timestamp + PATH + query_string
+        payload = method + timestamp + PATH + query_string + json.dumps(order_payload)
 
         # 3. Sign the payload using HMAC-SHA256
         signature = hmac.new(

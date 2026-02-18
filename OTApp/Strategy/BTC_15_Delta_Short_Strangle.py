@@ -51,11 +51,13 @@ class BTC_15_Delta_Strangle:
                         f"***Market side ways with strangle_points {market_check['strangle_points']} good to initiate trade***")
                     # # if no_trade false then goahead of trade
                     # no_trade = True
-                    # 2. Fetch fresh option chain data
-                    responses = DataCollector.fetch_btc_options(today=DataCollector.today)
-                    options_list = DataAnalyser.DataAnalyser.filter_15_delta_options(jsonRespose=responses.json())
+                    # 2. Fetch fresh option chain data until len(option_list)==2 upto 5 mins for every 30 sec to 60 sec
+                    #  after 5 trial check the whole scenario again
+                    responses = None
+                    options_list = []
+                    options_list, responses, ivr = self.get_option_pair(options_list, responses)
                     if len(options_list) == 2:
-                        trade_record = {'market_check': market_check, 'initial_legs': options_list.copy()}
+                        trade_record = {'market_check': market_check, 'initial_legs': options_list.copy(), 'ivr': ivr}
                         # Need to check price matching condition before placing order
                         price_match_response = DataAnalyser.DataAnalyser.option_price_matched(options_list)
                         trade_record.update({'price_match_response': price_match_response})
@@ -74,17 +76,17 @@ class BTC_15_Delta_Strangle:
                             trade_record.update({'un_matched_leg_handle_resp': un_matched_leg_handle_resp})
 
                         # Volatility Crush check
-                        ivr = DataAnalyser.DataAnalyser.volatility_attractive(json_response=responses.json())
-                        trade_record.update({'ivr': ivr})
-                        if ivr < 45.0:
+                        # ivr = DataAnalyser.DataAnalyser.volatility_attractive(json_response=responses.json())
+                        # trade_record.update({'ivr': ivr})
+                        ivr_value = ivr['ivr']
+                        if ivr_value < 25.0:
                             self._loger_.critical(
                                 f"⚠️  IV RANK TOO LOW: {ivr:.2f} | "
                                 f"Status: 🏷️ Cheap Premiums / 🧨 High Spike Risk | "
                                 f"Action: Skipping Trade for Capital Preservation 🛑"
                             )
-                        elif ivr > 85.0:
-                            self._loger_.info(
-                                f"🔥 IV : {ivr} is extremely high. High premium, but watch for extreme price moves!")
+                        elif ivr_value > 25.0:
+                            self.log_ivr_state(ivr, ivr_value)
                             # calculating sl and lots as per max daily loss
                             # combine premium collection
                             total_premium = 0.0
@@ -120,9 +122,23 @@ class BTC_15_Delta_Strangle:
                                 TradeMunshi().save_trade_snapshot(trade_record)
                                 # start trade monitoring
                                 break
+                            else:
+                                self._loger_.error(
+                                    f"🚫 INSUFFICIENT MARGIN | "
+                                    f"Required: ? | "
+                                    f"Available: ? | "
+                                    f"Shortfall: -? 💸 | "
+                                    f"Action: Order Aborted"
+                                )
+                        else:
+                            self._loger_.warning(
+                                f"⚠️  STRATEGY INHIBITED | IVR: {ivr:.2f} | "
+                                f"Target: >=85.0 | "
+                                f"Status: Waiting for Volatility Spike... ⏳"
+                            )
                     else:
                         self._loger_.warning(f" ⚠️ No Options Pair Found ")
-
+                    # **** Need to envoke monitoring stuff here or integrate trade monitoring logic here ....
                     # If you want to stop entirely for the day after the first successful
                     # data processing, you could 'break' here.
                     # Otherwise, it will re-fetch in 1 minute.
@@ -130,13 +146,64 @@ class BTC_15_Delta_Strangle:
                     time.sleep(BTC_15_Delta_Strangle.CONFIG['TRAIL_FREQUENCY'] * 60 * 1)
                 else:
                     self._loger_.info(
-                        f" Market does not looks side way ... will check in {BTC_15_Delta_Strangle.CONFIG['TRAIL_FREQUENCY'] * 5 * 60} Seconds...")
+                        f" Market does not looks side way ... "
+                        f" Strangle Points : {market_check['strangle_points']} "
+                        f" will check in {BTC_15_Delta_Strangle.CONFIG['TRAIL_FREQUENCY'] * 5 * 60} Seconds...")
                     time.sleep(BTC_15_Delta_Strangle.CONFIG['TRAIL_FREQUENCY'] * 60 * 3)
             except Exception as e:
                 self._loger_.error(
                     f"Error fetching data: {e}. Will retry in {BTC_15_Delta_Strangle.CONFIG['TRAIL_FREQUENCY']} minute.")
                 # 3. Wait for 1 minute before the next attempt/recheck
                 time.sleep(BTC_15_Delta_Strangle.CONFIG['TRAIL_FREQUENCY'] * 60)
+
+    def log_ivr_state(self, ivr, ivr_value):
+        # Map icons to market states for visual clarity
+        state_icons = {
+            "Normal": "🟢",  # Conservative / Safe
+            "High Volatility": "⚡",  # Aggressive / High Edge
+            "Extreme Panic": "🚨"  # High Risk / Gamma Warning
+        }
+        # Determine the icon based on the current market state
+        current_state = ivr.get('market_state', 'Normal')
+        icon = state_icons.get(current_state, "🔍")
+        self._loger_.info(
+            f"{icon} [IVR: {ivr_value:.2f}] | State: {current_state} | "
+            f"Action: {ivr['action']} | Target Delta: {ivr['target_delta']} Δ"
+        )
+
+    def get_option_pair(self, options_list: list[Any], responses: Response | None) -> tuple[
+        list[Any] | Any, Response | None | Any, Any]:
+        """
+        In case of good scenario not need to fetch all data only need to fetch and assure
+        we have two option with opposit contact for strangle
+
+        :param options_list:
+        :param responses:
+        :return:
+        """
+
+        for attempt in range(1, 6):
+            self._loger_.info(f"🔍 [Attempt {attempt}/5] Searching for option pair...")
+            # 2. Fetch data
+            responses = DataCollector.fetch_btc_options(today=DataCollector.today)
+            # Volatility Crush check to get target delta in based on market situation
+            ivr = DataAnalyser.DataAnalyser.volatility_attractive(json_response=responses.json())
+            target_delta = ivr['target_delta']
+            # 3. Analyze/Filter data
+            options_list = DataAnalyser.DataAnalyser.filter_15_delta_options(jsonRespose=responses.json(),
+                                                                             target_delta=target_delta)
+            # 4. Check if we hit the "Golden Goal" (exactly 2 records)
+            if len(options_list) == 2:
+                self._loger_.info("✅ SUCCESS | Found exactly 2 matching legs. Proceeding to trade...")
+                break  # 🏁 Exit the loop immediately
+            # 5. Handle the "Not Found" case
+            if attempt < 5:
+                self._loger_.warning(
+                    f"⚠️ [Attempt {attempt}] Found {len(options_list)} legs with {target_delta} delta. Need exactly 2. "
+                    f"Retrying in 10 seconds... ⏳"
+                )
+                time.sleep(10)  # 🛑 Wait for 30 seconds before next iteration
+        return options_list, responses, ivr
 
     def handle_un_matched_legs(self, options_list, market_check,
                                price_match_response,
@@ -183,7 +250,7 @@ class BTC_15_Delta_Strangle:
 # --- Scheduler Setup ---
 scheduler = BlockingScheduler(timezone=Config.TIME_ZONE.zone)
 # This tells the scheduler to wake up at 06:00 every day
-scheduler.add_job(BTC_15_Delta_Strangle().trade_job, 'cron', hour=12, minute=20)
+scheduler.add_job(BTC_15_Delta_Strangle().trade_job, 'cron', hour=6, minute=15)
 AppLogger.logger.info("Scheduler active. The bot will check every minute between 06:00 and 08:15 IST daily.")
 try:
     scheduler.start()

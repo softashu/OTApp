@@ -7,7 +7,7 @@ from OTApp.Logger.Logger import AppLogger
 
 class DeltaExchangeConfiguration:
     BASE_URL = 'https://api.india.delta.exchange'
-    API_VERSION = 'v2'
+    API_VERSION = '/v2'
     CLIENT = None
     API_KEY = None
     API_KEY = os.getenv('delta_api_key')
