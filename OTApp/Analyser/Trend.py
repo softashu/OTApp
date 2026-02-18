@@ -154,6 +154,8 @@ class Market:
             if 'CONFIRM' in super_trend['super_trend']:
                 strangle_points = strangle_points + 1
                 self._loger_.critical("Super Trend : ✅ 💎 💎 💎 💎 Green Light ON Strangle is high probability.")
+        elif super_trend['super_trend'] == 'BEARISH_SIDEWAYS_CONFIRM':
+            strangle_points = strangle_points + 1
 
         # Calculating swing high and low
         swings = indicator.get_swings(df_for_all, symbol=symbol, resolution=resolution, window=2)
@@ -225,7 +227,6 @@ class Market:
         price_change_pct = ((current_price - start_price) / start_price) * 100
         self._loger_.info(f"📈 📊 {limit}h Price Movement: {abs(price_change_pct):.2f}%")
         return price_change_pct
-
 
 # result = Market().market_sideways('BTCUSD', '1h', 24)
 # pprint(result)
