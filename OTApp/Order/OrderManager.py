@@ -15,8 +15,8 @@ class OrderManager:
     def __init__(self):
         pass
 
-    def place_order(self, trade_record):
-        path = DeltaExchangeConfiguration.API_VERSION() + '/orders'
+    def place_orders(self, trade_record):
+        path = DeltaExchangeConfiguration.API_VERSION() + '/orders/bracket'
         req_method = 'POST'
         # 1. Determine which legs to execute
         legs = self.find_legs(trade_record)
@@ -26,50 +26,54 @@ class OrderManager:
         req_query_string = ''  # Empty for this request
         # preparing the request body and placing order at time
         executed_orders = []
-        for leg in legs:
-            symbol = leg.get('symbol', 'Unknown')
-            # 2. Prepare the specific order dictionary (including SL and Trigger Method)
-            order_payload = self.prepare_order(leg, trade_record)
-            # 3. Regenerate signature/timestamp for each request (best practice for high frequency)
-            signature, timestamp = APIRequestSecurityManager().build_payload_signature(path, req_method,
-                                                                                       req_query_string, order_payload)
-            # 4. Set Headers
-            headers = {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json',
-                'api-key': DeltaExchangeConfiguration.API_KEY(),
-                'signature': signature,
-                'timestamp': timestamp
-            }
-            try:
-                self._logger_.info(
-                    f"🚀 SENDING ORDER | {symbol} | Qty: {order_payload.get('size')} | Type: {order_payload.get('order_type')}...")
-                # 4. Make the Request - Passing the order_payload as JSON
-                place_order_response = requests.post(
-                    f"{DeltaExchangeConfiguration.BASE_URL()}{path}",
-                    json=order_payload,
-                    headers=headers,
-                    timeout=10
-                )
-                place_order_response_data = place_order_response.json()
-
-                if place_order_response.status_code in [200, 201]:
-                    response_data = place_order_response_data['result']
+        try:
+            for leg in legs:
+                symbol = leg.get('symbol', 'Unknown')
+                # 2. Prepare the specific order dictionary (including SL and Trigger Method)
+                order_payload = self.prepare_order(leg, trade_record)
+                # 3. Regenerate signature/timestamp for each request (best practice for high frequency)
+                signature, timestamp = APIRequestSecurityManager().build_payload_signature(path, req_method,
+                                                                                           req_query_string,
+                                                                                           order_payload)
+                # 4. Set Headers
+                headers = {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'api-key': DeltaExchangeConfiguration.API_KEY(),
+                    'signature': signature,
+                    'timestamp': timestamp
+                }
+                try:
                     self._logger_.info(
-                        f"✅ ORDER ACCEPTED | ID: {response_data['id']} | {response_data['product_symbol']} \n"
-                        f"📍 Type: {response_data['stop_order_type']} | State: {response_data['state'].upper()} \n"
-                        f"💰 Stop Price: {response_data['stop_price']} | Trigger: {response_data['stop_trigger_method']}"
+                        f"🚀 SENDING ORDER | {symbol} | Qty: {order_payload.get('size')} | Type: {order_payload.get('order_type')}...")
+                    # 4. Make the Request - Passing the order_payload as JSON
+                    place_order_response = requests.post(
+                        f"{DeltaExchangeConfiguration.BASE_URL()}{path}",
+                        json=order_payload,
+                        headers=headers,
+                        timeout=10
                     )
-                    executed_orders.append(
-                        {"status": "SUCCESS", "payload": order_payload, "response": place_order_response_data})
-                else:
-                    self._logger_.error(
-                        f"⚠️  ORDER REJECTED | {symbol} | Reason: {place_order_response_data.get('error_description', 'Unknown Error')} 🛑")
-                    executed_orders.append(
-                        {"status": "REJECTED", "payload": order_payload, "response": place_order_response_data})
-            except Exception as e:
-                self._logger_.error(f"🚨 NETWORK ERROR | {symbol} | Failed to reach Delta Exchange: {str(e)}")
-                executed_orders.append({"status": "NETWORK_FAILURE", "payload": order_payload, "error": str(e)})
+                    place_order_response_data = place_order_response.json()
+
+                    if place_order_response.status_code in [200, 201]:
+                        response_data = place_order_response_data['result']
+                        self._logger_.info(
+                            f"✅ ORDER ACCEPTED | ID: {response_data['id']} | {response_data['product_symbol']} \n"
+                            f"📍 Type: {response_data['stop_order_type']} | State: {response_data['state'].upper()} \n"
+                            f"💰 Stop Price: {response_data['stop_price']} | Trigger: {response_data['stop_trigger_method']}"
+                        )
+                        executed_orders.append(
+                            {"status": "SUCCESS", "payload": order_payload, "response": place_order_response_data})
+                    else:
+                        self._logger_.error(
+                            f"⚠️  ORDER REJECTED | {symbol} | Reason: {place_order_response_data.get('error').get('code', 'Unknown Error')} 🛑")
+                        executed_orders.append(
+                            {"status": "REJECTED", "payload": order_payload, "response": place_order_response_data})
+                except Exception as e:
+                    self._logger_.error(f"🚨 NETWORK ERROR | {symbol} | Failed to reach Delta Exchange: {str(e)}")
+                    executed_orders.append({"status": "NETWORK_FAILURE", "payload": order_payload, "error": str(e)})
+        except Exception as e:
+            self._logger_.error(f"Error while placing trade_record {trade_record}")
         return executed_orders
 
     def prepare_order(self, leg, trade_record) -> dict[str, str | Any]:
@@ -115,27 +119,30 @@ class OrderManager:
             stop_trigger_method = "mark_price"
             max_trade_sl = trade_record['trade']['max_trade_sl']
             max_sell_lots = trade_record['trade']['max_sell_lots']
-            # Calculate SL based on the premium price of the option itself
-            # If premium rises by (Total Risk / Lots), we exit.
-            leg_sl = float(leg['mark_price']) + (max_trade_sl / max_sell_lots)
+            leg_sl_points = trade_record['trade']['leg_sl_points']
+            # SL based on the premium price of the option itself
+            leg_sl = float(leg['mark_price']) + leg_sl_points
             self._logger_.warning(
                 f"🧨 MONETARY STOP LOSS | {leg_symbol} | "
                 f"No Structure Found! Max Loss Trigger: {leg_sl:.2f} | Method: MARK 💸"
             )
+        #  we should convert .005 to 5 as lots
+        sell_lots = int(trade_record['trade']['sell_lots'] * 1000)
         return {
             "product_id": leg['product_id'],
             "product_symbol": leg['symbol'],
-            "size": int(trade_record['trade']['max_sell_lots']),
+            "size": sell_lots,
             "side": "sell",
             "order_type": "limit_order",
             "limit_price": float(leg['quotes']['best_bid']),
             "time_in_force": "gtc",
-            "stop_order_type": "stop_loss_order",
-            "stop_trigger_method": stop_trigger_method,
-            "stop_price": self.round_to_tick(leg_sl, leg['tick_size']),
+            "stop_loss_order": {"stop_price": self.round_to_tick(leg_sl, float(leg['tick_size'])),
+                                "order_type": "market_order"
+                                },
+            "bracket_stop_trigger_method": stop_trigger_method,
             "client_order_id": "15_Delta_" + leg_contract_type,  # <--- YOUR TRACKING ID
             "post_only": False,
-            "reduce_only": True
+            "reduce_only": False
         }
 
     def sl_by_ob(self, leg, order_block) -> float:
