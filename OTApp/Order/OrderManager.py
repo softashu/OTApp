@@ -10,13 +10,30 @@ from OTApp.Security.APIRequestSecurityManager import APIRequestSecurityManager
 
 
 class OrderManager:
+
+    """
+    Scenario	                    Endpoint	            Method	    Order ID	        Use Case
+    1. New order + bracket	        /v2/orders	            POST	    Not needed	        Place order with SL/TP from start
+    2. Add bracket to order	        /v2/orders/bracket	    PUT	        Required	        Add/modify SL/TP on existing order
+    3. Bracket for position	        /v2/orders/bracket	    POST	    Not used	        Add SL/TP to existing position
+    4. Edit order basics	        /v2/orders	            PUT     	Required	        Change price/size (not bracket)
+
+    Use Scenario 1 (POST /v2/orders with bracket params):
+        You want SL/TP attached immediately when placing the order
+        One API call, simpler
+
+    """
     _logger_ = AppLogger().get_log()
 
     def __init__(self):
         pass
 
     def place_orders(self, trade_record):
-        path = DeltaExchangeConfiguration.API_VERSION() + '/orders/bracket'
+        # Create new order along with bracket or plan
+        new_order_path = DeltaExchangeConfiguration.API_VERSION() + '/orders'
+        # Create a bracket order for an existing open position using the
+        update_bracket_path = DeltaExchangeConfiguration.API_VERSION() + '/orders/bracket'
+
         req_method = 'POST'
         # 1. Determine which legs to execute
         legs = self.find_legs(trade_record)
@@ -30,9 +47,10 @@ class OrderManager:
             for leg in legs:
                 symbol = leg.get('symbol', 'Unknown')
                 # 2. Prepare the specific order dictionary (including SL and Trigger Method)
+                # Use Scenario 1 (POST /v2/orders with bracket params):
                 order_payload = self.prepare_order(leg, trade_record)
                 # 3. Regenerate signature/timestamp for each request (best practice for high frequency)
-                signature, timestamp = APIRequestSecurityManager().build_payload_signature(path, req_method,
+                signature, timestamp = APIRequestSecurityManager().build_payload_signature(new_order_path, req_method,
                                                                                            req_query_string,
                                                                                            order_payload)
                 # 4. Set Headers
@@ -48,7 +66,7 @@ class OrderManager:
                         f"🚀 SENDING ORDER | {symbol} | Qty: {order_payload.get('size')} | Type: {order_payload.get('order_type')}...")
                     # 4. Make the Request - Passing the order_payload as JSON
                     place_order_response = requests.post(
-                        f"{DeltaExchangeConfiguration.BASE_URL()}{path}",
+                        f"{DeltaExchangeConfiguration.BASE_URL()}{new_order_path}",
                         json=order_payload,
                         headers=headers,
                         timeout=10
@@ -136,10 +154,11 @@ class OrderManager:
             "order_type": "limit_order",
             "limit_price": float(leg['quotes']['best_bid']),
             "time_in_force": "gtc",
-            "stop_loss_order": {"stop_price": self.round_to_tick(leg_sl, float(leg['tick_size'])),
-                                "order_type": "market_order"
-                                },
+            # "stop_loss_order": {"stop_price": self.round_to_tick(leg_sl, float(leg['tick_size'])),
+            #                     "order_type": "market_order"
+            #                     }
             "bracket_stop_trigger_method": stop_trigger_method,
+            'bracket_stop_loss_price': self.round_to_tick(leg_sl, float(leg['tick_size'])),
             "client_order_id": "15_Delta_" + leg_contract_type,  # <--- YOUR TRACKING ID
             "post_only": False,
             "reduce_only": False
