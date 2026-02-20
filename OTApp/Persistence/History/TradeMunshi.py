@@ -6,6 +6,24 @@ from datetime import datetime, time
 
 from OTApp.Logger.Logger import AppLogger
 
+"""
+🔱 The "Ghost-Writer" Architecture
+        Main Thread (Producer): Simply "tosses" the trade record into a memory queue and immediately moves on to the next trade.
+        
+        Background Thread (Consumer): Sits in the background, waits for items in the queue, and handles the saving and retrying.
+        
+        Memory Management: Data exists in the queue only until it is successfully written to the disk.
+        
+        
+        🔱 Why this is the "Ultimate Hack" for your Bot
+                Zero Latency: Your execute_trade method no longer waits for the hard drive. It "shoots" the data to the queue and continues scanning the market.
+                
+                Retry Shield: If your hard drive is busy or a file is locked, the background thread will wait and try again without crashing your main trading logic.
+                
+                Automatic Memory Cleanup: Once self.trade_queue.get() finishes a loop, the local trade_data variable is overwritten or garbage collected, keeping your RAM lean.
+                
+"""
+
 
 class TradeMunshi():
     def __init__(self):
