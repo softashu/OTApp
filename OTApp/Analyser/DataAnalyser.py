@@ -89,8 +89,8 @@ class DataAnalyser:
                     elif 25 <= mark_iv < 50:
                         market_state = 'Normal'
                         action = 'Conservative Selling'
-                        target_delta = .12  # commenting till debugging
-                        # target_delta = .15
+                        # target_delta = .12  # commenting till debugging
+                        target_delta = .15
                     elif 50 <= mark_iv <= 90:
                         market_state = 'High Volatility'
                         action = 'Standard/Aggressive Selling'

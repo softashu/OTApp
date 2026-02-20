@@ -15,11 +15,13 @@ class TradeMunshi():
             # Create a unique filename using timestamp and symbol
             # 1. Prepare unique metadata
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"OTApp/Persistence/History/trade/trade_{timestamp}_{trade_record['symbol']}.json"
+            # filename = f"OTApp/Persistence/History/trade/trade_{timestamp}_{trade_record['trade_symbol']}.json"
 
             # 2. Define path and ensure the ACTUAL directory exists
-            base_path = "OTApp/Persistence/History/trade"
-            filename = f"{base_path}/trade_{timestamp}.json"
+            # 1. Get the Absolute Root of your Project
+            # This points to the directory where THIS script lives
+            base_path = os.path.dirname(os.path.abspath(__file__)) + "/trade"
+            filename = f"{base_path}/trade_{timestamp}_{trade_record['trade_symbol']}.json"
 
             # os.path.dirname gets the folder path from the filename string
             os.makedirs(os.path.dirname(filename), exist_ok=True)
@@ -27,6 +29,8 @@ class TradeMunshi():
             # 3. Save with pretty-printing
             with open(filename, 'w', encoding='utf-8') as f:
                 json.dump(trade_record, f, indent=4, default=str)  # default=str handles datetime objects
+                f.flush()            # Pushes data from Python to the OS
+                os.fsync(f.fileno()) # Pushes data from the OS to the actual disk
 
             # 4. Success Log
             self._logger_.info(
@@ -37,7 +41,7 @@ class TradeMunshi():
         except Exception as e:
             self._logger_.error(
                 f"🚨 CRITICAL ERROR: Trade snapshot failed! | "
-                f"Symbol: {trade_record.get('symbol')} | Error: {str(e)}"
+                f"Symbol: {trade_record.get('trade_symbol')} | Error: {str(e)}"
             )
 
     def prepare_trade_record(self, market_check, price_match_response, ivr, legs):
