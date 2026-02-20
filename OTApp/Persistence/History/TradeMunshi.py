@@ -1,7 +1,8 @@
 import json
-import logging
 import os
-from datetime import datetime
+import queue
+import threading
+from datetime import datetime, time
 
 from OTApp.Logger.Logger import AppLogger
 
@@ -9,6 +10,39 @@ from OTApp.Logger.Logger import AppLogger
 class TradeMunshi():
     def __init__(self):
         self._logger_ = AppLogger().get_log()
+        # 1. Initialize the Thread-Safe Memory Queue
+        self.trade_queue = queue.Queue()
+        # 2. Start the Background Dedicated Thread
+        self.munshi_ji_thread = threading.Thread(target=self._minshi_worker, daemon=True)
+        self.munshi_ji_thread.start()
+
+    def save_trade_snapshot_thread_support(self, trade_record):
+        """
+        Main Task: Just puts data in memory and returns instantly.
+        """
+        self.trade_queue.put(trade_record)
+        # Main program is now free!
+
+    def _minshi_worker(self):
+        """
+        Background Task: Dedicated to saving data with retry logic.
+        """
+        while True:
+            # Step 2: Retrieve from memory (blocks until data is available)
+            trade_data = self.trade_queue.get()
+            success = False
+            retries = 0
+            while not success and retries < 5:
+                try:
+                    self.save_trade_snapshot(trade_data)
+                    success = True
+                    # Step 3: Success! Data is now cleared from the 'trade_data' variable
+                    # and the queue automatically as we move to the next item.
+                except Exception as e:
+                    retries += 1
+                    time.sleep(2)  # Wait before retry
+            # Mark the task as done in the queue
+            self.trade_queue.task_done()
 
     def save_trade_snapshot(self, trade_record):
         try:
@@ -29,8 +63,8 @@ class TradeMunshi():
             # 3. Save with pretty-printing
             with open(filename, 'w', encoding='utf-8') as f:
                 json.dump(trade_record, f, indent=4, default=str)  # default=str handles datetime objects
-                f.flush()            # Pushes data from Python to the OS
-                os.fsync(f.fileno()) # Pushes data from the OS to the actual disk
+                f.flush()  # Pushes data from Python to the OS
+                os.fsync(f.fileno())  # Pushes data from the OS to the actual disk
 
             # 4. Success Log
             self._logger_.info(
