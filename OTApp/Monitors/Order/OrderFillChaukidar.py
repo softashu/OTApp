@@ -83,14 +83,14 @@ class BahaduarDass():
                 # Optional: Re-queue the fill if processing failed
                 self.order_fill_queue.put(fill_data)
             finally:
-                self.fill_queue.task_done()  # Clean up memory reference
+                self.order_fill_queue.task_done()  # Clean up memory reference
 
     def _vigilant_watch(self):
         """ The service: processing with the dedication of BahaduarDass """
         while True:
-            fill = self.vigilance_queue.get()
+            fill = self.order_fill_queue.get()
             try:
                 # Logic for monitoring fill, calculating slippage, and verifying SL
                 self._logger_.info(f"🔱 BahaduarDass is processing fill: {fill.get('symbol')}")
             finally:
-                self.vigilance_queue.task_done()
+                self.order_fill_queue.task_done()

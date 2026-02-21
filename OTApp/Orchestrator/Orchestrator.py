@@ -33,6 +33,17 @@ class Orchestrator:
         except (KeyboardInterrupt, SystemExit):
             self._logger_.critical(f"Scheduler stopped manually")
 
+        # # Register the "Guard" for Ctrl+C (SIGINT)
+        # signal.signal(signal.signal.SIGINT, self.graceful_exit)
+
+    # def graceful_exit(sig, frame):
+    #     print("\n🔱 Raavan Engine: Initiating shutdown sequence...")
+    #     # Close the WebSocket explicitly
+    #     if 'listener' in globals() and listener.ws:
+    #         listener.ws.close()
+    #     print("👋 BahaduarDass: Vigilant watch ended. Exiting safely.")
+    #     sys.exit(0)
+
 
 # Starting ... every thing
 Orchestrator()

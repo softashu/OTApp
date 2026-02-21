@@ -1,8 +1,8 @@
-import logging
-import time
-import hmac
 import hashlib
+import hmac
 import json
+import time
+
 import websocket  # pip install websocket-client
 
 from OTApp.Logger.Logger import AppLogger
@@ -45,65 +45,65 @@ class DeltaWebSocketListener:
         self._logger_ = AppLogger().get_log()
         self.ws = None
 
-    def _generate_auth_payload(self):
-        """Generates the signature required for private channel authentication."""
-        try:
-            timestamp = str(int(time.time()))
-            signature_data = "GET" + timestamp + "/auth"
-            signature = hmac.new(
-                self.api_secret.encode('utf-8'),
-                signature_data.encode('utf-8'),
-                hashlib.sha256
-            ).hexdigest()
+    def _generate_signature(self, secret, message):
+        """Standard HMAC-SHA256 signature generation."""
+        message_bytes = bytes(message, 'utf-8')
+        secret_bytes = bytes(secret, 'utf-8')
+        return hmac.new(secret_bytes, message_bytes, hashlib.sha256).hexdigest()
 
-            return {
-                "type": "auth",
+    def send_authentication(self, ws):
+        """Sends the 'key-auth' payload as per working demo."""
+        try:
+            method = 'GET'
+            timestamp = str(int(time.time()))
+            path = '/live'  # Specific path required for WS auth
+            signature_data = method + timestamp + path
+            signature = self._generate_signature(self.api_secret, signature_data)
+
+            auth_payload = {
+                "type": "key-auth",
                 "payload": {
-                    "api_key": self.api_key,
-                    "timestamp": timestamp,
-                    "signature": signature
+                    "api-key": self.api_key,
+                    "signature": signature,
+                    "timestamp": timestamp
                 }
             }
+            ws.send(json.dumps(auth_payload))
+            self._logger_.info("🔐 AUTH_SENT: Key-auth payload dispatched.")
         except Exception as e:
-            self._logger_.error(f"❌ AUTH_GEN_ERROR: Failed to create signature | {e}")
-            return None
+            self._logger_.error(f"❌ AUTH_PREP_ERROR: {e}")
 
     def on_open(self, ws):
-        """Callback triggered when the connection is established."""
-        self._logger_.info("📡 WS_CONNECTED: Connection established to Delta Exchange.")
-
-        # 1. Authenticate
-        auth_msg = self._generate_auth_payload()
-        if auth_msg:
-            ws.send(json.dumps(auth_msg))
-            self._logger_.info("🔐 AUTH_SENT: Authentication payload dispatched.")
-
-        # 2. Subscribe to Private Order Updates
-        sub_msg = {
-            "type": "subscribe",
-            "payload": {"channels": [{"name": "user_orders"}]}
-            # Can we have strategy based channel like 15-delta, up_strategy, down_strategy etc ..
-        }
-        ws.send(json.dumps(sub_msg))
-        self._logger_.info("📝 SUB_SENT: Subscribed to 'user_orders' channel.")
+        self._logger_.info("📡 WS_OPEN: Connection established.")
+        self.send_authentication(ws)
 
     def on_message(self, ws, message):
-        """Callback triggered when a new message arrives."""
         try:
             data = json.loads(message)
+            msg_type = data.get('type')
 
-            # Route fill events to BahaduarDass
-            if data.get('type') == 'user_orders':
-                content = data.get('content', {})
-                if content.get('state') == 'filled':
-                    self._logger_.info(
-                        f"🎯 FILL_EVENT: {content.get('symbol')} filled at {content.get('avg_fill_price')}")
-                    self.monitor.report_fill(content)
+            # Handle Auth Response
+            if msg_type == 'key-auth':
+                if data.get('success'):
+                    self._logger_.info("✅ AUTH_SUCCESS: Delta India authenticated.")
+                    # Subscribe to orders (Private Channel)
+                    self._subscribe(ws, "orders")
+                else:
+                    self._logger_.error(f"❌ AUTH_FAILED: {data.get('message')}")
 
-        except json.JSONDecodeError:
-            self._logger_.warning(f"⚠️ MALFORMED_DATA: Received invalid JSON | {message}")
+            # Handle Order Fills
+            elif msg_type == 'orders':
+                data_state = data.get('state', {})
+                if data_state == 'filled':
+                    # Forward to BahaduarDass Dispatcher
+                    self.monitor.report_fill(data)
+                # else:
+                #     pprint(data)
+                #     self.monitor.report_fill(data)
+
+
         except Exception as e:
-            self._logger_.error(f"🚨 MSG_PROCESS_ERROR: Unexpected error in on_message | {e}")
+            self._logger_.error(f"🚨 MSG_ERROR: {e}")
 
     def on_error(self, ws, error):
         """Handles connection and protocol errors."""
@@ -132,3 +132,19 @@ class DeltaWebSocketListener:
             ping_timeout=10,
             reconnect=5  # This is the 5-second automatic retry guard
         )
+
+    def _subscribe(self, ws, channel):
+        """Subscription helper using the 'all' symbols list."""
+        sub_msg = {
+            "type": "subscribe",
+            "payload": {
+                "channels": [
+                    {
+                        "name": channel,
+                        "symbols": ["all"]  # 'all' is required for user account streams
+                    }
+                ]
+            }
+        }
+        ws.send(json.dumps(sub_msg))
+        self._logger_.info(f"📝 SUB_SENT: Channel '{channel}' is now live.")
