@@ -77,7 +77,7 @@ class AppLogger:
 
     def get_log(cls):
         global logger
-        # # Set up your strategy logger
+        # Set up your strategy logger
         logger = AppLogger().setup_logger(Config.STRATEGIES[0])
         # # # add_telegram_alerts(scalp_logger)
         # #

@@ -2,12 +2,10 @@ import time
 from datetime import datetime, time as dtime
 from typing import Any
 
-from apscheduler.schedulers.blocking import BlockingScheduler
 from requests import Response
 
 from OTApp.Analyser import DataAnalyser
 from OTApp.Analyser.Trend import Market
-from OTApp.Configuration.AppConfig import Config
 from OTApp.DataCollectors.DeltaExchangeDataCollector import DataCollector
 from OTApp.Logger.Logger import AppLogger
 from OTApp.Margin.Margin import Margin
@@ -81,7 +79,7 @@ class BTC_15_Delta_Strangle:
                         ivr_value = ivr['ivr']
                         if ivr_value < 25.0:
                             self._loger_.critical(
-                                f"⚠️  IV RANK TOO LOW: {ivr:.2f} | "
+                                f"⚠️  IV RANK TOO LOW: {ivr_value:.2f} | "
                                 f"Status: 🏷️ Cheap Premiums / 🧨 High Spike Risk | "
                                 f"Action: Skipping Trade for Capital Preservation 🛑"
                             )
@@ -107,8 +105,11 @@ class BTC_15_Delta_Strangle:
                                 # Update trade_record with the actual execution results for history analysis
                                 trade_record['execution_history'] = place_trade_resp
                                 # Save all market analysis data for later use
-                                TradeMunshi().save_trade_snapshot(trade_record)
-                                # start trade monitoring
+                                # TradeMunshi().save_trade_snapshot(trade_record)
+                                TradeMunshi().save_trade_snapshot_thread_support(trade_record)
+                                # Invoke trade fill monitoring we called it Nigrani
+                                # OrderFillChaukidar().order_nigrani(trade_record)
+                                # start trade
                                 break
                             else:
                                 self._loger_.error(
@@ -304,13 +305,12 @@ class BTC_15_Delta_Strangle:
         except Exception as e:
             self._loger_.error(f"Error while handling ")
 
-
-# --- Scheduler Setup ---
-scheduler = BlockingScheduler(timezone=Config.TIME_ZONE.zone)
-# This tells the scheduler to wake up at 06:00 every day
-scheduler.add_job(BTC_15_Delta_Strangle().trade_job, 'cron', hour=8, minute=48)
-AppLogger.logger.info("Scheduler active. The bot will check every minute between 06:00 and 08:15 IST daily.")
-try:
-    scheduler.start()
-except (KeyboardInterrupt, SystemExit):
-    AppLogger.logger.critical(f"Scheduler stopped manually")
+# # --- Scheduler Setup ---
+# scheduler = BlockingScheduler(timezone=Config.TIME_ZONE.zone)
+# # This tells the scheduler to wake up at 06:00 every day
+# scheduler.add_job(BTC_15_Delta_Strangle().trade_job, 'cron', hour=5, minute=00)
+# AppLogger.logger.info("Scheduler active. The bot will check every minute between 06:00 and 08:15 IST daily.")
+# try:
+#     scheduler.start()
+# except (KeyboardInterrupt, SystemExit):
+#     AppLogger.logger.critical(f"Scheduler stopped manually")
