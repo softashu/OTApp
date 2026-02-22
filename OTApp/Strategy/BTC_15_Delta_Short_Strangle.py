@@ -61,9 +61,9 @@ class BTC_15_Delta_Strangle:
                         # 🧊 "Ice" Icon for Consolidation
                         self._loger_.critical(
                             f"🧊  IV RANK TOO LOW: {ivr_value:.2f} | "
-                            f"Status: 🏷️ Cheap Premiums / 🧨 High Spike Risk | "
-                            f"Action: Skipping Trade for Capital Preservation 🛑 "
-                            f"...Sleep for 15m....."
+                            f"\nStatus: 🏷️ Cheap Premiums / 🧨 High Spike Risk | "
+                            f"\nAction: Skipping Trade for Capital Preservation 🛑 "
+                            f"\n...Sleep for 15m....."
                         )
                         # wait 15m and continue
                         """

@@ -44,6 +44,10 @@ class DeltaWebSocketListener:
         self.ws_url = "wss://socket.india.delta.exchange"
         self._logger_ = AppLogger().get_log()
         self.ws = None
+        # 🔱 Retry configuration
+        self.auth_attempts = 0
+        self.max_auth_delay = 60  # Max wait of 60 seconds
+        self.base_delay = 2  # Start with 2 seconds
 
     def _generate_signature(self, secret, message):
         """Standard HMAC-SHA256 signature generation."""
@@ -85,11 +89,12 @@ class DeltaWebSocketListener:
             # Handle Auth Response
             if msg_type == 'key-auth':
                 if data.get('success'):
-                    self._logger_.info("✅ AUTH_SUCCESS: Delta India authenticated.")
+                    self._logger_.info("✅ AUTH_SUCCESS: Delta India authenticated the BahaduarDass is now authorized.")
+                    self.auth_attempts = 0  # Reset counter on success
                     # Subscribe to orders (Private Channel)
                     self._subscribe(ws, "orders")
                 else:
-                    self._logger_.error(f"❌ AUTH_FAILED: {data.get('message')}")
+                    self._handle_auth_failure(ws, data)
 
             # Handle Order Fills
             elif msg_type == 'orders':
@@ -148,3 +153,32 @@ class DeltaWebSocketListener:
         }
         ws.send(json.dumps(sub_msg))
         self._logger_.info(f"📝 SUB_SENT: Channel '{channel}' is now live.")
+
+    def _handle_auth_failure(self, ws, error_data):
+        """
+        To implement a persistent authentication loop within the BahaduarDass sentinel,
+        we can use an Exponential Backoff strategy. This ensures that if authentication fails
+        (due to network jitter or temporary server issues), the system doesn't "spam" the exchange but instead waits
+        for increasing intervals before trying again.
+
+        🔱 The Robust "Vigilant" Auth Loop
+        We will modify the on_message handler to detect the key-auth failure and trigger a
+        re-authentication attempt.
+
+        🔱 The Backoff Guard: Retries authentication with increasing wait times.
+        :param ws:
+        :param data:
+        :return:
+        """
+        self.auth_attempts += 1
+
+        # Calculate delay: 2, 4, 8, 16... up to 60s
+        wait_time = min(self.base_delay * (2 ** (self.auth_attempts - 1)), self.max_auth_delay)
+        self._logger_.warning(
+            f"⚠️ AUTH_FAILED: {error_data.get('message')} | "
+            f"Attempt: {self.auth_attempts} | Retrying in {wait_time}s..."
+        )
+
+        # Wait before trying again
+        time.sleep(wait_time)
+        self.send_authentication(ws)
