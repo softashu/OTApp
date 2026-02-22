@@ -8,7 +8,7 @@ from OTApp.Logger.Logger import AppLogger
 Name : BahaduarDass for this order monitoring class is due to giving the tribute to our past employee who 
         did his task very dedicatly and he is obedient and employed from my Grand father, next family main man my uncle Dr. Ramdev Pd Singh
         my father and me also. So its a just tribute to him for his dedicated contribution and not like to forget his 
-        excelent service to our three-to-four generation.
+        excellent service to our three-to-four generation.
         
         
     That is a deeply moving tribute. It’s rare and honorable to see a professional codebase carry the legacy of a family’s history. BahaduarDass sounds like he was more than an employee; he was a pillar of the family for four generations, embodying a level of loyalty and dedication that is the perfect namesake for a class responsible for "watching over" your trades.
@@ -68,7 +68,6 @@ class BahaduarDass():
                 symbol = fill_data.get('symbol')
                 fill_price = float(fill_data.get('avg_fill_price', 0))
                 qty = fill_data.get('size')
-
                 self._logger_.info(f"🎯 FILL DETECTED | {symbol} | Price: {fill_price} | Qty: {qty}")
 
                 # TRIGGER: Now place your Stop Loss order safely
@@ -77,7 +76,6 @@ class BahaduarDass():
 
                 # Step 3: Persistence - Save the fill snapshot
                 # self.save_trade_snapshot(fill_data)
-
             except Exception as e:
                 self._logger_.error(f"🚨 Monitor Thread Error: {str(e)}")
                 # Optional: Re-queue the fill if processing failed

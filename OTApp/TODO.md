@@ -46,5 +46,8 @@ All message should print then you may invoke next day trade Note : verify if eve
        Cons: Harder to scale if you ever move the containers to separate EC2 instances.
 
        Latency: < 0.1ms.
-       
-   **Choose between 1 and 2** 
+
+   **Choose between 1 and 2**
+
+
+5. ^****^ Switch for fetching option data switch date to next day after 5:30 PM IST ****
