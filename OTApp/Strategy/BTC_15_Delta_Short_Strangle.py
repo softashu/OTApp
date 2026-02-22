@@ -55,7 +55,28 @@ class BTC_15_Delta_Strangle:
                     responses = None
                     options_list = []
                     options_list, responses, ivr = self.get_option_pair(options_list, responses)
-                    if len(options_list) == 2:
+                    ivr_value = ivr['ivr']
+                    # Volatility Crush check
+                    if ivr_value < 25.0:
+                        # 🧊 "Ice" Icon for Consolidation
+                        self._loger_.critical(
+                            f"🧊  IV RANK TOO LOW: {ivr_value:.2f} | "
+                            f"Status: 🏷️ Cheap Premiums / 🧨 High Spike Risk | "
+                            f"Action: Skipping Trade for Capital Preservation 🛑 "
+                            f"...Sleep for 15m....."
+                        )
+                        # wait 15m and continue
+                        """
+                        The 15-Minute "Pulse" (Recommended)
+                            For BTC daily options, 15 minutes is the "sweet spot" for your next iteration.
+                            Why? 
+                            BTC volatility can "wake up" extremely fast due to sudden liquidations. 
+                            A 5-minute wait is often too noisy (just minor bid/ask flickering), 
+                            but a 1-hour wait might miss the initial "pop" where premiums are highest.
+                        """
+                        time.sleep(BTC_15_Delta_Strangle.CONFIG['TRAIL_FREQUENCY'] * 60 * 14)
+                        continue
+                    elif len(options_list) == 2:
                         trade_record = {'market_check': market_check, 'initial_legs': options_list.copy(), 'ivr': ivr,
                                         'trade_symbol': self.__strategy_name__}
                         # Need to check price matching condition before placing order
@@ -75,15 +96,7 @@ class BTC_15_Delta_Strangle:
                             options_list = un_matched_leg_handle_resp['final_legs']
                             trade_record.update({'un_matched_leg_handle_resp': un_matched_leg_handle_resp})
 
-                        # Volatility Crush check
-                        ivr_value = ivr['ivr']
-                        if ivr_value < 25.0:
-                            self._loger_.critical(
-                                f"⚠️  IV RANK TOO LOW: {ivr_value:.2f} | "
-                                f"Status: 🏷️ Cheap Premiums / 🧨 High Spike Risk | "
-                                f"Action: Skipping Trade for Capital Preservation 🛑"
-                            )
-                        elif ivr_value > 25.0:
+                        if ivr_value > 25.0:
                             self.log_ivr_state(ivr, ivr_value)
                             # calculating sl and lots as per max daily loss
                             # combine premium collection
@@ -248,20 +261,23 @@ class BTC_15_Delta_Strangle:
             # Volatility Crush check to get target delta in based on market situation
             ivr = DataAnalyser.DataAnalyser.volatility_attractive(json_response=responses.json())
             target_delta = ivr['target_delta']
-            # 3. Analyze/Filter data
-            options_list = DataAnalyser.DataAnalyser.filter_15_delta_options(jsonRespose=responses.json(),
-                                                                             target_delta=target_delta)
-            # 4. Check if we hit the "Golden Goal" (exactly 2 records)
-            if len(options_list) == 2:
-                self._loger_.info("✅ SUCCESS | Found exactly 2 matching legs. Proceeding to trade...")
-                break  # 🏁 Exit the loop immediately
-            # 5. Handle the "Not Found" case
-            if attempt < 5:
-                self._loger_.warning(
-                    f"⚠️ [Attempt {attempt}] Found {len(options_list)} legs with {target_delta} delta. Need exactly 2. "
-                    f"Retrying in 10 seconds... ⏳"
-                )
-                time.sleep(10)  # 🛑 Wait for 30 seconds before next iteration
+            if target_delta is None:
+                break
+            else:
+                # 3. Analyze/Filter data
+                options_list = DataAnalyser.DataAnalyser.filter_15_delta_options(jsonRespose=responses.json(),
+                                                                                 target_delta=target_delta)
+                # 4. Check if we hit the "Golden Goal" (exactly 2 records)
+                if len(options_list) == 2:
+                    self._loger_.info("✅ SUCCESS | Found exactly 2 matching legs. Proceeding to trade...")
+                    break  # 🏁 Exit the loop immediately
+                # 5. Handle the "Not Found" case
+                if attempt < 5:
+                    self._loger_.warning(
+                        f"⚠️ [Attempt {attempt}] Found {len(options_list)} legs with {target_delta} delta. Need exactly 2. "
+                        f"Retrying in 10 seconds... ⏳"
+                    )
+                    time.sleep(10)  # 🛑 Wait for 30 seconds before next iteration
         return options_list, responses, ivr
 
     def handle_un_matched_legs(self, options_list, market_check,
