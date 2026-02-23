@@ -20,6 +20,8 @@ class DeltaWebSocketPublicListener:
         self.ws_url = "wss://socket.india.delta.exchange"
         self._logger_ = logger
         self.ws = None
+        self.INTERVAL = 300
+        self.last_mark_price_processed_time = 0
 
     def on_open(self, ws):
         self._logger_.info("📡 WS_PUB_OPEN: Connection established.")
@@ -43,11 +45,21 @@ class DeltaWebSocketPublicListener:
         """
         self.subscribe(ws, channel="product_updates", symbols=None)
         # bitcoin mark price update
-        self.subscribe(ws, channel="mark_price", symbols=['BTCUSD'])
+        self.subscribe(ws, channel="mark_price", symbols=['MARK:BTCUSD'])
 
     def on_message(self, ws, message):
         try:
-            self.monitor.on_announcement(json.loads(message))
+            message_json = json.loads(message)
+
+            if message_json.get('type') == 'mark_price':
+                current_time = time.time()
+                # Only process every 5 minutes
+                if current_time - self.last_mark_price_processed_time >= self.INTERVAL:
+                    self.last_mark_price_processed_time = current_time
+                    # Otherwise, ignore the update
+                    self.monitor.on_announcement(json.loads(message))
+            else:
+                self.monitor.on_announcement(json.loads(message))
         except Exception as e:
             self._logger_.error(f"WS_PUB: 🚨 MSG_ERROR: {e}")
 
