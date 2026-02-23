@@ -6,6 +6,7 @@ from requests import Response
 
 from OTApp.Analyser import DataAnalyser
 from OTApp.Analyser.Trend import Market
+from OTApp.Configuration.AppConfig import Config
 from OTApp.DataCollectors.DeltaExchangeDataCollector import DataCollector
 from OTApp.Logger.Logger import AppLogger
 from OTApp.Margin.Margin import Margin
@@ -19,7 +20,8 @@ class BTC_15_Delta_Strangle:
     __strategy_name__ = 'btc_15_delta_strangle'
     CONFIG = {
         'START_TIME': "06:00",  # Entry time in IST (24h format)
-        'TRY_END_TIME': dtime(23, 15),  # Keep try for punching trade upto this 8:15 AM
+        'TRY_END_TIME': dtime(hour=10, minute=15, tzinfo=Config.TIME_ZONE),
+        # Keep try for punching trade upto this 8:15 AM
         'TRAIL_FREQUENCY': 1,  # Trail frequency in minutes
         'GOAL_TARGET_PROFIT_INR': 33.24,
         # Your goal, actual  need to calculated as per premium collected with ration 2/3
@@ -32,7 +34,7 @@ class BTC_15_Delta_Strangle:
         # Define the hard cutoff
         cutoff_time = BTC_15_Delta_Strangle.CONFIG['TRY_END_TIME']
         while True:
-            now = datetime.now().time()
+            now = datetime.now(Config.TIME_ZONE).time()
             # 1. Check if we have passed 8:15 AM
             if now > cutoff_time:
                 self._loger_.warning(
@@ -44,7 +46,7 @@ class BTC_15_Delta_Strangle:
                 # checking for side way market
                 market_check = Market().market_sideways('BTCUSD', '1h', 24)
                 # Will go ahead if strangle point > 2 only ...
-                if market_check['strangle_points'] >= 0:
+                if market_check['strangle_points'] >= 3:
                     trade_record = None
                     self._loger_.critical(
                         f"***Market side ways with strangle_points {market_check['strangle_points']} good to initiate trade***")
@@ -112,7 +114,7 @@ class BTC_15_Delta_Strangle:
                             margin_sufficient = Margin().margin_sufficient(leverage, spot_price, total_premium,
                                                                            BTC_15_Delta_Strangle.CONFIG['LOT_SIZE_BTC'])
                             trade_record.update({'margin_sufficient': margin_sufficient})
-                            if not margin_sufficient:
+                            if margin_sufficient:
                                 # Place order
                                 place_trade_resp = OrderManager().place_orders(trade_record)
                                 # Update trade_record with the actual execution results for history analysis
