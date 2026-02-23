@@ -19,4 +19,4 @@ RUN mkdir -p /app/logs && chmod 777 /app/logs
 COPY . .
 
 # 5. Use 'python3' and module dots (no .py)
-CMD ["python3", "-m", "Strategy.BTC_15_Delta_Short_Strangle"]
+CMD ["python3", "-m", "Orchestrator.Orchestrator"]

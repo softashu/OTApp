@@ -9,4 +9,4 @@ services:
       - /home/ubuntu/OTApp/logs:/app/logs
     env_file:
       - OTApp.env
-    command: [ "python3", "-m", "OTApp.Strategy.BTC_15_Delta_Short_Strangle" ]
+    command: [ "python3", "-m", "Orchestrator.Orchestrator" ]
