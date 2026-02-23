@@ -50,4 +50,4 @@ All message should print then you may invoke next day trade Note : verify if eve
    **Choose between 1 and 2**
 
 
-5. ^****^ Switch for fetching option data switch date to next day after 5:30 PM IST ****
+~~5. ^****^ Switch for fetching option data switch date to next day after 5:30 PM IST ****~~
