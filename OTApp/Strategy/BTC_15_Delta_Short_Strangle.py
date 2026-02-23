@@ -121,6 +121,7 @@ class BTC_15_Delta_Strangle:
                                 # TradeMunshi().save_trade_snapshot(trade_record)
                                 TradeMunshi().save_trade_snapshot_thread_support(trade_record)
                                 # Invoke trade fill monitoring we called it Nigrani
+
                                 # OrderFillChaukidar().order_nigrani(trade_record)
                                 # start trade
                                 break
@@ -141,6 +142,7 @@ class BTC_15_Delta_Strangle:
                     else:
                         self._loger_.warning(f" ⚠️ No Options Pair Found ")
                     # **** Need to envoke monitoring stuff here or integrate trade monitoring logic here ....
+
                     # If you want to stop entirely for the day after the first successful
                     # data processing, you could 'break' here.
                     # Otherwise, it will re-fetch in 1 minute.

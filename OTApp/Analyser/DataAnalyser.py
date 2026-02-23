@@ -99,7 +99,9 @@ class DataAnalyser:
                         market_state = 'Extreme Panic'
                         action = 'High Risk / Managed Entry'
                         target_delta = .07
-                    #     Breaking the loop
+                        cls._logger_.warning(
+                            f"Market in panic situation with IRV : {mark_iv} selecting strike with delta : {target_delta}")
+                    # Breaking the loop
                     break
 
                 # below commented code is for testing purpose
