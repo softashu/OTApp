@@ -83,14 +83,14 @@ class DeltaWebSocketPublicListener:
             elif type == 'subscriptions':
                 self._logger_.info(f"Message type: {type} and {message_json}")
             elif type == 'unsubscribed':
-                symbol = message_json.get('symbol')
-                # Skip processing if symbol is missing
-                if not symbol:
-                    self._logger_.warning("Received message without symbol field")
-                    return
-                # Initialize symbol in map if it doesn't exist (first time processing)
-                if symbol in self.process_time_map:
-                    self.process_time_map.pop(symbols, None)
+                channels = message_json.get('channel', [])
+                if channels:
+                    for channel in channels:
+                        channel_name = channel.get('name')
+                        symbols = channel.get('symbols', [])
+                        for symbol in symbols:
+                            if symbol in self.process_time_map:
+                                self.process_time_map.pop(symbols, None)
             else:
                 self._logger_.critical(f"Unknown Message type: {type} and {message_json}")
         except Exception as e:

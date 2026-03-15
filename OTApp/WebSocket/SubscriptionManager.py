@@ -51,7 +51,6 @@ class SubscriptionManager():
                     }
                 }
             self.pub_ws.send(json.dumps(payload))
-            self.logger.info(f"Public subscribe to {channel} channel ans symbols: {symbols}")
         except Exception as e:
             self.logger.error(
                 f"Public subscription fail with {e} for channel : {channel} and symbols : {symbols}")

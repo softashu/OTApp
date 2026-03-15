@@ -212,15 +212,17 @@ class BahaduarDass():
         return order_data_cls
 
     def act_on_stale_orders(self):
-        with self._active_order_lock_:
-            for strategy in self._yet_filled_.keys():
-                # self._logger_.info(f"Start action for all pending order for strategy : {strategy} ")
-                symbols = []
-                for order_data in self._yet_filled_[strategy].values():
-                    symbol = order_data.symbol
-                    symbols.append(symbol)
-                # Convert list to tuple (hashable)
-                symbols_key = tuple(symbols) if isinstance(symbols, list) else symbols
-                if symbols_key not in self.subscriber_manager.subscribed_symbols:
-                    self._logger_.info(f"Subscribing for l2_orderbook for order of  symbols {symbols}")
-                    self.subscriber_manager.subscribe_feeds(channel='l2_orderbook', symbols=symbols, public=True)
+        try:
+            with self._active_order_lock_:
+                for strategy in self._yet_filled_.keys():
+                    symbols = []
+                    for order_data in self._yet_filled_[strategy].values():
+                        symbol = order_data.symbol
+                        symbols.append(symbol)
+                    # Convert list to tuple (hashable)
+                    symbols_key = tuple(symbols) if isinstance(symbols, list) else symbols
+                    if (symbols_key not in self.subscriber_manager.subscribed_symbols) and symbols:
+                        self._logger_.info(f"Subscribing for l2_orderbook for order of  symbols {symbols}")
+                        self.subscriber_manager.subscribe_feeds(channel='l2_orderbook', symbols=symbols, public=True)
+        except Exception as e:
+            self._logger_.error(f"Error in act_on_stale_orders: {e}")
