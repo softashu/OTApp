@@ -107,40 +107,42 @@ class BahaduarDass():
     def prepare_order_collections(self, order_data) -> Any:
         action = order_data.get('action')
         if action == 'snapshot' and 'result' in order_data:
-            order_data_results = order_data.get('result', [])
-            for order_data_result in order_data_results:
-                order_state = order_data_result.get('state', {})
-                strategy_name = order_data_result.get('client_order_id')
-                order_data_class: OrderResult = self.prepare_order_data_class(order_data_result)
-                order_data_class.symbol = order_data.get('symbol')
-                order_data_class.success = order_data.get('success')
-                symbol = order_data_class.symbol
-                if order_state == 'filled':
-                    fill_price = float(order_data_class.average_fill_price)
-                    qty = order_data_class.size
-                    self._logger_.info(f"🎯 FILL DETECTED | {symbol} | Price: {fill_price} | Qty: {qty}")
-                    # Updating the collection
-                    self._filled[strategy_name][order_data_result.get('product_id')] = order_data_class
-                    # Removing safely from created data structure
-                    with self._active_order_lock_:
-                        self._yet_filled_[strategy_name].pop(order_data_result.get('product_id'), None)
-                elif order_state in {'create', 'update', 'open'}:
-                    with self._active_order_lock_:
-                        #  Comment out as we are already using continuous loop for handle all pending order
-                        #  that help to reduce threads for every pending orders
-                        # order_data_class.popcorn = threading.Timer(self.WAIT_TIME, lambda: self._vigilant_pending_orders())
-                        self._yet_filled_[strategy_name][order_data_result.get('product_id')] = order_data_class
-                elif order_state == 'delete':
-                    with self._active_order_lock_:
-                        self._yet_filled_[strategy_name].pop(order_data_result.get('product_id'), None)
-                        # Unsubscribe order symbols for l2_orderbook
-                        self.subscriber_manager.unsubscribe_feeds(symbols=[symbol], channel='l2_orderbook', public=True)
+            self.handle_snapshot_order_data(order_data)
         elif action == 'delete':
             self.handle_delete_order(order_data)
-
-
-
+        elif action in {'create', 'update'}:
+            self.handle_order_data(order_data)
         else:
+            self._logger_.critical(f"Getting unhandled order data {order_data}")
+        return order_data
+
+    def handle_snapshot_order_data(self, order_data):
+        order_data_results = order_data.get('result', [])
+        for order_data_result in order_data_results:
+            order_state = order_data_result.get('state', {})
+            strategy_name = order_data_result.get('client_order_id')
+            order_data_class: OrderResult = self.prepare_order_data_class(order_data_result)
+            order_data_class.symbol = order_data.get('symbol')
+            order_data_class.success = order_data.get('success')
+            symbol = order_data_class.symbol
+            if order_state == 'filled':
+                fill_price = float(order_data_class.average_fill_price)
+                qty = order_data_class.size
+                self._logger_.info(f"🎯 FILL DETECTED | {symbol} | Price: {fill_price} | Qty: {qty}")
+                # Updating the collection
+                self._filled[strategy_name][order_data_result.get('product_id')] = order_data_class
+                # Removing safely from created data structure
+                with self._active_order_lock_:
+                    self._yet_filled_[strategy_name].pop(order_data_result.get('product_id'), None)
+            elif order_state in {'create', 'update', 'open'}:
+                with self._active_order_lock_:
+                    #  Comment out as we are already using continuous loop for handle all pending order
+                    #  that help to reduce threads for every pending orders
+                    # order_data_class.popcorn = threading.Timer(self.WAIT_TIME, lambda: self._vigilant_pending_orders())
+                    self._yet_filled_[strategy_name][order_data_result.get('product_id')] = order_data_class
+
+    def handle_order_data(self, order_data):
+        try:
             order_state = order_data.get('state', {})
             strategy_name = order_data.get('client_order_id')
             order_data_class: OrderResult = self.prepare_order_data_class(order_data)
@@ -162,10 +164,8 @@ class BahaduarDass():
                     #  that help to reduce threads for every pending orders
                     # order_data_class.popcorn = threading.Timer(self.WAIT_TIME, lambda: self._vigilant_pending_orders())
                     self._yet_filled_[strategy_name][order_data.get('product_id')] = order_data_class
-            elif order_state == 'delete':
-                with self._active_order_lock_:
-                    self._yet_filled_[strategy_name].pop(order_data.get('product_id'), None)
-        return order_data
+        except Exception as e:
+            self._logger_.error(f"Error {e} occurred while handling of order_data :  {order_data}")
 
     def handle_delete_order(self, order_data):
         order_state = order_data.get('state', {})
@@ -220,9 +220,8 @@ class BahaduarDass():
                         symbol = order_data.symbol
                         symbols.append(symbol)
                     # Convert list to tuple (hashable)
-                    symbols_key = tuple(symbols) if isinstance(symbols, list) else symbols
-                    if (symbols_key not in self.subscriber_manager.subscribed_symbols) and symbols:
-                        self._logger_.info(f"Subscribing for l2_orderbook for order of  symbols {symbols}")
+                    symbols_key = tuple(symbols) if isinstance(symbols, list) else (symbols,) if symbols else ()
+                    if symbols_key and symbols_key not in self.subscriber_manager.subscribed_symbols:
                         self.subscriber_manager.subscribe_feeds(channel='l2_orderbook', symbols=symbols, public=True)
         except Exception as e:
             self._logger_.error(f"Error in act_on_stale_orders: {e}")
