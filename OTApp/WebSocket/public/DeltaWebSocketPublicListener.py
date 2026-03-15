@@ -83,14 +83,14 @@ class DeltaWebSocketPublicListener:
             elif type == 'subscriptions':
                 self._logger_.info(f"Message type: {type} and {message_json}")
             elif type == 'unsubscribed':
-                channels = message_json.get('channel', [])
+                channels = message_json.get('channels', [])
                 if channels:
                     for channel in channels:
                         channel_name = channel.get('name')
                         symbols = channel.get('symbols', [])
                         for symbol in symbols:
                             if symbol in self.process_time_map:
-                                self.process_time_map.pop(symbols, None)
+                                self.process_time_map.pop(symbol, None)
             else:
                 self._logger_.critical(f"Unknown Message type: {type} and {message_json}")
         except Exception as e:
