@@ -65,7 +65,8 @@ class BTC_15_Delta_Strangle:
                             f"🧊  IV RANK TOO LOW: {ivr_value:.2f} | "
                             f"\nStatus: 🏷️ Cheap Premiums / 🧨 High Spike Risk | "
                             f"\nAction: Skipping Trade for Capital Preservation 🛑 "
-                            f"\n...Sleep for 15m....."
+                            f"\n...Sleep for 15m..... "
+                            f" \n ..IRV Recommended Action : {ivr['action']}"
                         )
                         # wait 15m and continue
                         """

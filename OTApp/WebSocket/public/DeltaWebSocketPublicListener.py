@@ -1,12 +1,12 @@
-import hashlib
-import hmac
 import json
 import time
-from pprint import pprint
 
 import websocket  # pip install websocket-client
+from Tools.scripts.nm2def import symbols
 
-from OTApp.Logger.Logger import AppLogger
+from OTApp.Monitors.Order.OrderChaukidar import BahaduarDass
+from OTApp.Monitors.Position.Jeri import Jeri
+from OTApp.Monitors.system.PublicAnnouncement.Announcements import PublicAnnouncement
 
 """
 Public data listner
@@ -15,13 +15,18 @@ Public data listner
 
 class DeltaWebSocketPublicListener:
 
-    def __init__(self, monitor_class, logger=None):
-        self.monitor = monitor_class  # The PublicAnnouncement instance
+    def __init__(self, public_announcement_monitor_class: PublicAnnouncement, order_monitor: BahaduarDass,
+                 position_monitor: Jeri, logger=None):
+        self.public_announcement_monitor = public_announcement_monitor_class  # The PublicAnnouncement instance
+        self.order_monitor = order_monitor
+        self.position_monitor = position_monitor
         self.ws_url = "wss://socket.india.delta.exchange"
         self._logger_ = logger
         self.ws = None
         self.INTERVAL = 300
+        self.PENDING_ORDER_PROCESS_INTERVAL = 10
         self.last_mark_price_processed_time = 0
+        self.process_time_map = {}
 
     def on_open(self, ws):
         self._logger_.info("📡 WS_PUB_OPEN: Connection established.")
@@ -50,16 +55,44 @@ class DeltaWebSocketPublicListener:
     def on_message(self, ws, message):
         try:
             message_json = json.loads(message)
-
-            if message_json.get('type') == 'mark_price':
+            type = message_json.get('type')
+            if type == 'mark_price':
                 current_time = time.time()
                 # Only process every 5 minutes
                 if current_time - self.last_mark_price_processed_time >= self.INTERVAL:
                     self.last_mark_price_processed_time = current_time
                     # Otherwise, ignore the update
-                    self.monitor.on_announcement(json.loads(message))
+                    self.public_announcement_monitor.on_announcement(json.loads(message))
+            elif type == 'l2_orderbook':
+                # Process at every 15 seconds
+                symbol = message_json.get('symbol')
+                # Skip processing if symbol is missing
+                if not symbol:
+                    self._logger_.warning("Received message without symbol field")
+                    return
+                # Initialize symbol in map if it doesn't exist (first time processing)
+                if symbol not in self.process_time_map:
+                    self.process_time_map[symbol] = 0
+                current_time = time.time()
+                # Check if enough time has elapsed since last processing
+                if current_time - self.process_time_map[symbol] >= self.PENDING_ORDER_PROCESS_INTERVAL:
+                    self._logger_.info(f"L2_ORDERBOOK: {message_json}")
+                    self.process_time_map[symbol] = current_time
+            elif type in {'announcements', 'system_status', 'product_updates'}:
+                self.public_announcement_monitor.on_announcement(message_json)
+            elif type == 'subscriptions':
+                self._logger_.info(f"Message type: {type} and {message_json}")
+            elif type == 'unsubscribed':
+                symbol = message_json.get('symbol')
+                # Skip processing if symbol is missing
+                if not symbol:
+                    self._logger_.warning("Received message without symbol field")
+                    return
+                # Initialize symbol in map if it doesn't exist (first time processing)
+                if symbol in self.process_time_map:
+                    self.process_time_map.pop(symbols, None)
             else:
-                self.monitor.on_announcement(json.loads(message))
+                self._logger_.critical(f"Unknown Message type: {type} and {message_json}")
         except Exception as e:
             self._logger_.error(f"WS_PUB: 🚨 MSG_ERROR: {e}")
 
@@ -82,6 +115,8 @@ class DeltaWebSocketPublicListener:
             on_error=self.on_error,
             on_close=self.on_close
         )
+        # initializing public ws variable to order and position manager
+        self.order_monitor.subscriber_manager.pub_ws = self.ws
 
         # 🔱 GUARD: Automatic reconnection logic
         # ping_interval/timeout keeps the connection alive via heartbeats

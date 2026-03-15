@@ -1,5 +1,4 @@
 import math
-from pprint import pprint
 from typing import Any
 
 import requests
@@ -10,7 +9,6 @@ from OTApp.Security.APIRequestSecurityManager import APIRequestSecurityManager
 
 
 class OrderManager:
-
     """
     Scenario	                    Endpoint	            Method	    Order ID	        Use Case
     1. New order + bracket	        /v2/orders	            POST	    Not needed	        Place order with SL/TP from start
@@ -25,8 +23,11 @@ class OrderManager:
     """
     _logger_ = AppLogger().get_log()
 
-    def __init__(self):
-        pass
+    def __init__(self, logger):
+        self._logger_ = logger
+        # self._ws_pub_ = ws_pub
+        # self._ws_private_ = ws_private
+        # self.orders = {}
 
     def place_orders(self, trade_record):
         # Create new order along with bracket or plan
@@ -69,7 +70,7 @@ class OrderManager:
                         f"{DeltaExchangeConfiguration.BASE_URL()}{new_order_path}",
                         json=order_payload,
                         headers=headers,
-                        timeout=10
+                        timeout=(3, 27)
                     )
                     place_order_response_data = place_order_response.json()
 
@@ -248,3 +249,6 @@ class OrderManager:
         if not tick_size or tick_size <= 0:
             return round(price, 2)  # Fallback
         return round(math.floor(price / tick_size) * tick_size, 8)
+
+    def nigrani_orders(self, strategy_name, orders):
+        self.orders.update({strategy_name: orders})

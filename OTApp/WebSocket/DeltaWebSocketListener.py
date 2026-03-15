@@ -6,6 +6,9 @@ import time
 import websocket  # pip install websocket-client
 
 from OTApp.Logger.Logger import AppLogger
+from OTApp.Monitors.Order.OrderChaukidar import BahaduarDass
+from OTApp.Monitors.Position.Jeri import Jeri
+from OTApp.WebSocket import SubscriptionManager
 
 """
 To truly honor the name BahaduarDass with a "vigilant sentinel" class, we must ensure the "Sense" (the WebSocket) is actually set up to listen. You are correct—the report_fill method is only the "receiver." We still need the "ear" to hear Delta Exchange.
@@ -37,10 +40,12 @@ class DeltaWebSocketListener:
     - Robust error handling and structured logging.
     """
 
-    def __init__(self, api_key, api_secret, monitor_class, logger=None):
+    def __init__(self, api_key, api_secret, order_monitor_class: BahaduarDass, position_monitor_class: Jeri,
+                 logger=None):
         self.api_key = api_key
         self.api_secret = api_secret
-        self.monitor = monitor_class  # The BahaduarDass instance
+        self.order_monitor = order_monitor_class  # The BahaduarDass instance
+        self.position_monitor = position_monitor_class  # Jeri instance
         self.ws_url = "wss://socket.india.delta.exchange"
         self._logger_ = AppLogger().get_log()
         self.ws = None
@@ -92,16 +97,36 @@ class DeltaWebSocketListener:
                     self._logger_.info("✅ AUTH_SUCCESS: Delta India authenticated the BahaduarDass is now authorized.")
                     self.auth_attempts = 0  # Reset counter on success
                     # Subscribe to orders (Private Channel)
-                    self._subscribe(ws, "orders")
+                    self._subscribe(ws, "orders")  # Includes position after fill
+                    # Primary: WebSocket for real-time updates in positions
+                    self._subscribe(ws=ws, channel="positions")
+                    # this will give update for order get fill
+                    self._subscribe(ws=ws, channel="v2/user_trades")
                 else:
                     self._handle_auth_failure(ws, data)
-
             # Handle Order Fills
             elif msg_type == 'orders':
-                data_state = data.get('state', {})
-                if data_state == 'filled':
+                action = data.get('action')
+                if action == 'snapshot' and 'result' in data and data['result']:
                     # Forward to BahaduarDass Dispatcher
-                    self.monitor.report_fill(data)
+                    self.order_monitor.report_bahadur_dass(data)
+                    self._logger_.info(f"Order data received: {data}")
+                elif action in {'delete', 'create', 'update'}:
+                    # Forward to BahaduarDass Dispatcher
+                    self.order_monitor.report_bahadur_dass(data)
+                    self._logger_.info(f"Order data received: {data}")
+                else:
+                    self._logger_.info(f"Order data received: {data} with action : {action}")
+            elif msg_type == 'positions':
+                action = data.get('action')
+                if action == 'snapshot' and 'result' in data and data['result']:
+                    self.position_monitor.report_positions(data)
+                    self._logger_.info(f"Position data received: {data}")
+                elif action in {'delete', 'create', 'update'}:
+                    self.position_monitor.report_positions(data)
+                    self._logger_.info(f"Position data received: {data}")
+                else:
+                    self._logger_.info(f"Position data received: {data} and action : {action}")
                 # else:
                 #     pprint(data)
                 #     self.monitor.report_fill(data)
@@ -129,6 +154,8 @@ class DeltaWebSocketListener:
             on_error=self.on_error,
             on_close=self.on_close
         )
+        # initializing private ws variable to order and position manager
+        self.order_monitor.subscriber_manager.private_ws = self.ws
 
         # 🔱 GUARD: Automatic reconnection logic
         # ping_interval/timeout keeps the connection alive via heartbeats
@@ -138,21 +165,45 @@ class DeltaWebSocketListener:
             reconnect=5  # This is the 5-second automatic retry guard
         )
 
-    def _subscribe(self, ws, channel):
+    def _subscribe(self, ws, channel, symbols=None):
         """Subscription helper using the 'all' symbols list."""
-        sub_msg = {
-            "type": "subscribe",
-            "payload": {
-                "channels": [
-                    {
-                        "name": channel,
-                        "symbols": ["all"]  # 'all' is required for user account streams
+        try:
+            if symbols is None:
+                sub_msg = {
+                    "type": "subscribe",
+                    "payload": {
+                        "channels": [
+                            {
+                                "name": channel,
+                                "symbols": ["all"]  # 'all' is required for user account streams
+                            }
+                        ]
                     }
-                ]
-            }
-        }
-        ws.send(json.dumps(sub_msg))
-        self._logger_.info(f"📝 SUB_SENT: Channel '{channel}' is now live.")
+                }
+            else:
+                sub_msg = {
+                    "type": "subscribe",
+                    "payload": {
+                        "channels": [
+                            {
+                                "name": channel,
+                                "symbols": symbols
+                            }
+                        ]
+                    }
+                }
+            ws.send(json.dumps(sub_msg))
+            self._logger_.info(f"📝 SUB_SENT: Channel '{channel}' is now live.")
+        except Exception as e:
+            self._logger_.critical(
+                f"\n{'=' * 40}\n"
+                f"🚨 CRITICAL SUBSCRIPTION FAILURE 🚨\n"
+                f"{'=' * 40}\n"
+                f"📍 Channel : {channel}\n"
+                f"🔍 Symbols : {symbols}\n"
+                f"❌ Error   : {e}\n"
+                f"{'=' * 40}"
+            )
 
     def _handle_auth_failure(self, ws, error_data):
         """
@@ -182,3 +233,83 @@ class DeltaWebSocketListener:
         # Wait before trying again
         time.sleep(wait_time)
         self.send_authentication(ws)
+
+    def subscribe_from_outer_world(self, channel, symbols=None):
+        """Subscription helper method for outer world"""
+        try:
+            if symbols is None:
+                sub_msg = {
+                    "type": "subscribe",
+                    "payload": {
+                        "channels": [
+                            {
+                                "name": channel,
+                                "symbols": ["all"]  # 'all' is required for user account streams
+                            }
+                        ]
+                    }
+                }
+            else:
+                sub_msg = {
+                    "type": "subscribe",
+                    "payload": {
+                        "channels": [
+                            {
+                                "name": channel,
+                                "symbols": symbols
+                            }
+                        ]
+                    }
+                }
+            self.ws.send(json.dumps(sub_msg))
+            self._logger_.info(f"📝 SUB_SENT: Channel '{channel}' is now live.")
+        except Exception as e:
+            self._logger_.critical(
+                f"\n{'=' * 40}\n"
+                f"🚨 CRITICAL SUBSCRIPTION FAILURE 🚨\n"
+                f"{'=' * 40}\n"
+                f"📍 Channel : {channel}\n"
+                f"🔍 Symbols : {symbols}\n"
+                f"❌ Error   : {e}\n"
+                f"{'=' * 40}"
+            )
+
+    def un_subscribe_from_outer_world(self, channel, symbols=None):
+        """Subscription helper method for outer world"""
+        try:
+            if symbols is None:
+                sub_msg = {
+                    "type": "unsubscribe",
+                    "payload": {
+                        "channels": [
+                            {
+                                "name": channel,
+                                "symbols": ["all"]  # 'all' is required for user account streams
+                            }
+                        ]
+                    }
+                }
+            else:
+                sub_msg = {
+                    "type": "unsubscribe",
+                    "payload": {
+                        "channels": [
+                            {
+                                "name": channel,
+                                "symbols": symbols
+                            }
+                        ]
+                    }
+                }
+            self.ws.send(json.dumps(sub_msg))
+            self._logger_.info(f"📝 UN_SUB_SENT: Channel '{channel}' with symbols '{symbols}' is done successfully.")
+        except Exception as e:
+            self._logger_.critical(
+                f"\n{'=' * 40}\n"
+                f"🚨 CRITICAL SUBSCRIPTION FAILURE 🚨\n"
+                f"{'=' * 40}\n"
+                f"📍 Channel : {channel}\n"
+                f"🔍 Symbols : {symbols}\n"
+                f"❌ Error   : {e}\n"
+                f"{'=' * 40}"
+            )

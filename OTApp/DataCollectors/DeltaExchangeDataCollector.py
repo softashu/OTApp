@@ -8,6 +8,8 @@ import requests
 
 from OTApp.Logger.Logger import AppLogger
 
+logger = AppLogger().get_log()
+
 
 def get_trading_day():
     # Define IST timezone
@@ -16,7 +18,7 @@ def get_trading_day():
     # Logic: Switch after 17:30 IST
     if now_ist.time() >= datetime.strptime("17:30", "%H:%M").time():
         active_date = now_ist + timedelta(days=1)
-        DataCollector.logger.info(f"****Trading Day has been switched to {active_date}.****")
+        logger.info(f"****Trading Day has been switched to {active_date}.****")
     else:
         active_date = now_ist
     today = active_date.strftime("%d-%m-%Y")
@@ -26,9 +28,10 @@ def get_trading_day():
 class DataCollector:
     BASE_URL = 'https://api.india.delta.exchange/v2'
     CE_PE_URL = BASE_URL + '/tickers'
-    logger = AppLogger().get_log()
-    # Automatically get today's date in DD-MM-YYYY format
+    logger = logger
     today = get_trading_day()
+
+    # Automatically get today's date in DD-MM-YYYY format
 
     # today = (datetime.now() + timedelta(days=1)).strftime("%d-%m-%Y")
 
@@ -108,6 +111,21 @@ class DataCollector:
             active_date = now_ist
         today = active_date.strftime("%d-%m-%Y")
         return today
+
+    @staticmethod
+    def get_trading_day():
+        # Define IST timezone
+        ist = pytz.timezone('Asia/Kolkata')
+        now_ist = datetime.now(ist)
+        # Logic: Switch after 17:30 IST
+        if now_ist.time() >= datetime.strptime("17:30", "%H:%M").time():
+            active_date = now_ist + timedelta(days=1)
+            DataCollector.logger.info(f"****Trading Day has been switched to {active_date}.****")
+        else:
+            active_date = now_ist
+        today = active_date.strftime("%d-%m-%Y")
+        return today
+
 # Use it for logging
 # logger.info(f"Session started for trading day: {get_trading_day()}")
 # DataCollector().get_ticker('BTCUSD')
