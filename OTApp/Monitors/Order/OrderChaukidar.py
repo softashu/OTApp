@@ -39,7 +39,6 @@ class BahaduarDass():
     def __init__(self):
         self._logger_ = AppLogger().get_log()
         self._active_order_lock_ = threading.Lock()
-
         # The memory of the system: holding the fill data
         self.order_queue = queue.Queue()
         self._yet_filled_: dict[str, dict[str, OrderResult]] = defaultdict(dict)
@@ -225,3 +224,32 @@ class BahaduarDass():
                         self.subscriber_manager.subscribe_feeds(channel='l2_orderbook', symbols=symbols, public=True)
         except Exception as e:
             self._logger_.error(f"Error in act_on_stale_orders: {e}")
+
+    def report_bahadur_dass_for_position(self, position_data):
+        action = position_data.get('action')
+        if action == 'snapshot' and 'result' in position_data and position_data['result']:
+            self.handle_snapshot_position_data(position_data)
+        elif action == 'delete':
+            pass
+            # self.handle_delete_position(position_data)
+        elif action in {'create'}:
+            pass
+            # self.handle_position_data(position_data)
+        else:
+            self._logger_.critical(f"Getting unhandled position data {position_data}")
+
+    def handle_snapshot_position_data(self, position_data):
+        position_data_results = position_data.get('result', [])
+        for position_data_result in position_data_results:
+            symbol = position_data_result.get('product_symbol')
+            product_id = position_data_result.get('product_id')
+            strategy_name = position_data_result.get('client_order_id')
+            # initiate to remove order from unfilled order collection if order gets filled totally
+            with self._active_order_lock_:
+                # check the filled size with order size
+                position_data_result = self._yet_filled_[strategy_name].get(product_id, None)
+                order_size = position_data_result.size
+                position_filled_size = position_data_result.size
+                if position_filled_size == order_size:
+                    self._yet_filled_[strategy_name].pop(product_id, None)
+                    self._logger_.info(f"Pending order list cleaned for position : {position_data_result}")

@@ -8,7 +8,6 @@ import websocket  # pip install websocket-client
 from OTApp.Logger.Logger import AppLogger
 from OTApp.Monitors.Order.OrderChaukidar import BahaduarDass
 from OTApp.Monitors.Position.Jeri import Jeri
-from OTApp.WebSocket import SubscriptionManager
 
 """
 To truly honor the name BahaduarDass with a "vigilant sentinel" class, we must ensure the "Sense" (the WebSocket) is actually set up to listen. You are correct—the report_fill method is only the "receiver." We still need the "ear" to hear Delta Exchange.
@@ -116,21 +115,30 @@ class DeltaWebSocketListener:
                     self.order_monitor.report_bahadur_dass(data)
                     self._logger_.info(f"Order data received: {data}")
                 else:
-                    self._logger_.info(f"Order data received: {data} with action : {action}")
+                    self._logger_.info(f"Websocket received ignored {action} Order data : {data} ")
             elif msg_type == 'positions':
                 action = data.get('action')
                 if action == 'snapshot' and 'result' in data and data['result']:
-                    self.position_monitor.report_positions(data)
-                    self._logger_.info(f"Position data received: {data}")
+                    self._logger_.info(f"Websocket received {action} position : {data}")
+                    self.position_monitor.report_jeri_for_positions(data)
+                    self.order_monitor.report_bahadur_dass_for_position(data)
                 elif action in {'delete', 'create', 'update'}:
-                    self.position_monitor.report_positions(data)
-                    self._logger_.info(f"Position data received: {data}")
+                    self._logger_.info(f"Websocket received {action} position : {data}")
+                    self.position_monitor.report_jeri_for_positions(data)
+                    self.order_monitor.report_bahadur_dass_for_position(data)
                 else:
-                    self._logger_.info(f"Position data received: {data} and action : {action}")
+                    self._logger_.info(f"Websocket received ignored {action} position : {data}")
                 # else:
                 #     pprint(data)
                 #     self.monitor.report_fill(data)
-
+            elif msg_type == 'v2/user_trades':
+                action = data.get('action')
+                self._logger_.info(f"Websocket received {action} trades : {data}")
+            elif msg_type == 'subscriptions':
+                action = data.get('action')
+                self._logger_.info(f"Websocket received private channels subscriptions : {data} with action : {action}")
+            else:
+                self._logger_.info(f"Websocket received ignored msg_type {msg_type} and data : {data}")
 
         except Exception as e:
             self._logger_.error(f"🚨 MSG_ERROR: {e}")

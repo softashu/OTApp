@@ -4,6 +4,7 @@
 import threading
 import time
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Optional, List
 
 from OTApp.Configuration.Enums import OrderSide, StrategyState
@@ -28,16 +29,21 @@ class OrderResult:
 
 @dataclass
 class PositionData:
-    strategy_name: str
-    product_id: int
     symbol: str
-    size: int
-    entry_price: float
-    margin: str
-    liquidation_price: str
-    realized_pnl: str
+    side: OrderSide
+    product_id: int
+    # Optional fields with defaults
+    strategy_name: str = None
+    size: int = 0
+    entry_price: Optional[float] = None
+    margin: Optional[Decimal] = None
+    position_id: Optional[int] = None
+    filled: bool = False
+    liquidation_price: Optional[Decimal] = None
+    realized_pnl: Optional[Decimal] = None
     unrealized_pnl: Optional[float] = None
     current_price: Optional[float] = None
+    data = None  # row position data
 
 
 @dataclass

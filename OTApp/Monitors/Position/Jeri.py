@@ -1,3 +1,8 @@
+import queue
+import threading
+from collections import defaultdict
+
+from OTApp.Configuration.DataClasses import PositionData
 from OTApp.Logger.Logger import AppLogger
 
 """
@@ -32,6 +37,11 @@ from OTApp.Logger.Logger import AppLogger
 class Jeri():
     def __init__(self):
         self._logger_ = AppLogger().get_log()
+        self._active_order_lock_ = threading.Lock()
+        # The memory of the system: holding the fill data
+        self.order_queue = queue.Queue()
+        self._positions_: dict[str, dict[str, PositionData]] = defaultdict(dict)
 
-    def report_positions(self, data):
-        pass
+    def report_jeri_for_positions(self, position_data):
+        self.order_queue.put(position_data)
+        self._logger_.info(f"Jeri received position : {position_data}")
