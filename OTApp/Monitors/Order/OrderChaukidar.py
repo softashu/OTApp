@@ -237,7 +237,7 @@ class BahaduarDass():
             self.handle_snapshot_position_data(position_data)
         elif action == 'delete':
             self.handle_delete_position(position_data)
-        elif action in {'create'}:
+        elif action in {'create', 'update'}:
             self.handle_position_data(position_data)
         else:
             self._logger_.critical(f"Getting unhandled position data {position_data}")
