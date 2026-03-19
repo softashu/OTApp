@@ -108,12 +108,12 @@ class DeltaWebSocketListener:
                 action = data.get('action')
                 if action == 'snapshot' and 'result' in data and data['result']:
                     # Forward to BahaduarDass Dispatcher
+                    self._logger_.info(f"Websocket received {action} {msg_type} data : {data}")
                     self.order_monitor.report_bahadur_dass(data)
-                    self._logger_.info(f"Order data received: {data}")
                 elif action in {'delete', 'create', 'update'}:
                     # Forward to BahaduarDass Dispatcher
+                    self._logger_.info(f"Websocket received {action} {msg_type} data : {data}")
                     self.order_monitor.report_bahadur_dass(data)
-                    self._logger_.info(f"Order data received: {data}")
                 else:
                     self._logger_.info(f"Websocket received ignored {action} Order data : {data} ")
             elif msg_type == 'positions':
@@ -133,13 +133,14 @@ class DeltaWebSocketListener:
                 #     self.monitor.report_fill(data)
             elif msg_type == 'v2/user_trades':
                 action = data.get('action')
-                self._logger_.info(f"Websocket received {action} trades : {data}")
+                self._logger_.info(
+                    f"Websocket received {msg_type} channels's message with action : {action} and trades details : {data}")
+                self.order_monitor.report_bahadur_dass(data)
             elif msg_type == 'subscriptions':
                 action = data.get('action')
                 self._logger_.info(f"Websocket received private channels subscriptions : {data} with action : {action}")
             else:
                 self._logger_.info(f"Websocket received ignored msg_type {msg_type} and data : {data}")
-
         except Exception as e:
             self._logger_.error(f"🚨 MSG_ERROR: {e}")
 

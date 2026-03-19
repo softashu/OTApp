@@ -43,5 +43,5 @@ class Jeri():
         self._positions_: dict[str, dict[str, PositionData]] = defaultdict(dict)
 
     def report_jeri_for_positions(self, position_data):
-        self.order_queue.put(position_data)
         self._logger_.info(f"Jeri received position : {position_data}")
+        self.order_queue.put(position_data)

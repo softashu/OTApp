@@ -17,6 +17,7 @@ class OrderResult:
     order_id: Optional[int] = None
     product_id: Optional[int] = None
     symbol: Optional[str] = None
+    side: Optional[OrderSide] = None
     size: int = 0
     unfilled_size: int = 0
     state: Optional[str] = None
@@ -29,15 +30,15 @@ class OrderResult:
 
 @dataclass
 class PositionData:
-    symbol: str
-    side: OrderSide
-    product_id: int
+    symbol: str = None
+    side: OrderSide = OrderSide.BUY
+    product_id: int = 0
     # Optional fields with defaults
     strategy_name: str = None
     size: int = 0
     entry_price: Optional[float] = None
     margin: Optional[Decimal] = None
-    position_id: Optional[int] = None
+    position_id: Optional[str] = None
     filled: bool = False
     liquidation_price: Optional[Decimal] = None
     realized_pnl: Optional[Decimal] = None

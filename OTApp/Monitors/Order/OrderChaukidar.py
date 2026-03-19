@@ -4,7 +4,8 @@ import time
 from collections import defaultdict
 from typing import List, Dict, Any
 
-from OTApp.Configuration.DataClasses import OrderResult
+from OTApp.Configuration.DataClasses import OrderResult, PositionData
+from OTApp.Configuration.Enums import OrderSide
 from OTApp.Logger.Logger import AppLogger
 from OTApp.WebSocket.SubscriptionManager import SubscriptionManager
 
@@ -39,10 +40,12 @@ class BahaduarDass():
     def __init__(self):
         self._logger_ = AppLogger().get_log()
         self._active_order_lock_ = threading.Lock()
+        self._order_position_lock_ = threading.Lock()
         # The memory of the system: holding the fill data
         self.order_queue = queue.Queue()
         self._yet_filled_: dict[str, dict[str, OrderResult]] = defaultdict(dict)
         self._filled: dict[str, dict[str, OrderResult]] = defaultdict(dict)
+        self._order_position_map: dict[str, dict[PositionData, OrderResult]] = defaultdict(dict)
         self.stop_pending_order_watch_event = threading.Event()
 
         # The dedicated spirit: processing in the background
@@ -58,7 +61,7 @@ class BahaduarDass():
     def report_bahadur_dass(self, order_data):
         """ The sense: instantly catching the market event """
         self.order_queue.put(order_data)
-        self._logger_.info(f"Order data : {order_data} added to queue:")
+        self._logger_.info(f"Bahadur Dash received order data : {order_data}")
 
     def _order_monitor_worker(self):
         """
@@ -166,7 +169,7 @@ class BahaduarDass():
         except Exception as e:
             self._logger_.error(f"Error {e} occurred while handling of order_data :  {order_data}")
 
-    def handle_delete_order(self, order_data):
+    def handle_delete_order(self, order_data, unsubscribe=True):
         order_state = order_data.get('state', {})
         symbol = order_data.get('symbol')
         product_id = order_data.get('product_id')
@@ -174,7 +177,8 @@ class BahaduarDass():
         # initiate delete action with another thread
         with self._active_order_lock_:
             self._yet_filled_[strategy_name].pop(product_id, None)
-            self.subscriber_manager.unsubscribe_feeds(symbols=[symbol], channel='l2_orderbook', public=True)
+            if unsubscribe:
+                self.subscriber_manager.unsubscribe_feeds(symbols=[symbol], channel='l2_orderbook', public=True)
 
     def _vigilant_pending_orders(self):
         """Only handles logic for orders waiting to be filled."""
@@ -199,6 +203,7 @@ class BahaduarDass():
     def prepare_order_data_class(self, order_result):
         order_data_cls: OrderResult = OrderResult()
         order_data_cls.order_id = order_result.get('id')
+        order_data_cls.side = OrderSide.BUY if order_result.get('side') == 'buy' else OrderSide.SELL
         order_data_cls.product_id = order_result.get('product_id')
         order_data_cls.strategy_name = order_result.get('client_order_id')
         order_data_cls.error = order_result.get('error_msg')
@@ -227,29 +232,76 @@ class BahaduarDass():
 
     def report_bahadur_dass_for_position(self, position_data):
         action = position_data.get('action')
+        self._logger_.info(f"Bahadur das received {action} position : {position_data}")
         if action == 'snapshot' and 'result' in position_data and position_data['result']:
             self.handle_snapshot_position_data(position_data)
         elif action == 'delete':
-            pass
-            # self.handle_delete_position(position_data)
+            self.handle_delete_position(position_data)
         elif action in {'create'}:
-            pass
-            # self.handle_position_data(position_data)
+            self.handle_position_data(position_data)
         else:
             self._logger_.critical(f"Getting unhandled position data {position_data}")
 
     def handle_snapshot_position_data(self, position_data):
-        position_data_results = position_data.get('result', [])
-        for position_data_result in position_data_results:
-            symbol = position_data_result.get('product_symbol')
-            product_id = position_data_result.get('product_id')
-            strategy_name = position_data_result.get('client_order_id')
-            # initiate to remove order from unfilled order collection if order gets filled totally
-            with self._active_order_lock_:
-                # check the filled size with order size
-                position_data_result = self._yet_filled_[strategy_name].get(product_id, None)
-                order_size = position_data_result.size
-                position_filled_size = position_data_result.size
-                if position_filled_size == order_size:
-                    self._yet_filled_[strategy_name].pop(product_id, None)
-                    self._logger_.info(f"Pending order list cleaned for position : {position_data_result}")
+        try:
+            position_data_results = position_data.get('result', [])
+            for position_data_result in position_data_results:
+                self.handle_position(position_data_result)
+        except Exception as e:
+            self._logger_.error(
+                f"Bahadur das having error while handle_snapshot_position_data: {position_data} and error is : {e}")
+
+    def handle_position(self, position_data_result):
+        try:
+            position_data: PositionData = self.prepare_position_data_class(position_data_result)
+            order_data: OrderResult = self.find_out_order_data_for_position(position_data)
+            if order_data:
+                with self._order_position_lock_:
+                    self._order_position_map.update[order_data.strategy_name].update({position_data: order_data})
+                # delete order from self._yet_filled_ dictionary but unsubscribe as we need feed for position tracking
+                self.handle_delete_order(order_data=order_data.data, unsubscribe=False)
+            else:
+                self._logger_.info(f"No ! order data found for {position_data} /n/t escaping position handling ...")
+        except Exception as e:
+            self._logger_.error(
+                f"Bahadur das having error while handle_position {position_data_result} and error is : {e}")
+
+    def prepare_position_data_class(self, position_data_result):
+        position_data_cls: PositionData = PositionData()
+        position_data_cls.product_id = position_data_result.get('product_id')
+        position_data_cls.size = position_data_result.get('size')
+        position_data_cls.symbol = position_data_result.get('product_symbol')
+        position_data_cls.position_id = f"{position_data_cls.product_id}_{position_data_result.get('user_id')}"
+        position_data_cls.side = OrderSide.SELL if position_data_cls.size < 0 else OrderSide.BUY
+        position_data_cls.data = position_data_result
+        return position_data_cls
+
+    def find_out_order_data_for_position(self, position_data):
+        order_data_cls: OrderResult = None
+        with self._active_order_lock_:
+            for strategy in self._yet_filled_.keys():
+                for order_data in self._yet_filled_[strategy].values():
+                    symbol_validation = order_data.symbol == position_data.symbol
+                    size_validation = order_data.size
+                    product_id_validation = order_data.product_id == position_data.product_id
+                    side_validation = order_data.side == position_data.side
+                    if symbol_validation and size_validation and product_id_validation and side_validation:
+                        order_data_cls = order_data
+                        position_data.strategy_name = order_data.strategy_name
+                        break
+        return order_data_cls
+
+    def handle_position_data(self, position_data):
+        self.handle_position(position_data)
+
+    def handle_delete_position(self, row_position_data):
+        position_data: PositionData = self.prepare_position_data_class(row_position_data)
+        order_data: OrderResult = self.find_out_order_data_for_position(position_data)
+        symbol = position_data.symbol
+        strategy_name = position_data.strategy_name
+        with self._order_position_lock_:
+            # Unsubscribe feed symbols
+            self.subscriber_manager.unsubscribe_feeds(symbols=[symbol], channel='l2_orderbook', public=True)
+            # Clean the Order / Position map
+            if order_data.strategy_name in self._order_position_map:
+                self._order_position_map[order_data.strategy_name].pop(position_data, None)
