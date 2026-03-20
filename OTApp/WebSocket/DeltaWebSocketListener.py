@@ -122,10 +122,14 @@ class DeltaWebSocketListener:
                     self._logger_.info(f"Websocket received {action} position : {data}")
                     self.position_monitor.report_jeri_for_positions(data)
                     self.order_monitor.report_bahadur_dass_for_position(data)
-                elif action in {'delete', 'create', 'update'}:
+                elif action in {'delete', 'create'}:
                     self._logger_.info(f"Websocket received {action} position : {data}")
                     self.position_monitor.report_jeri_for_positions(data)
                     self.order_monitor.report_bahadur_dass_for_position(data)
+                elif action in {'update'}:
+                    self._logger_.info(
+                        f"Websocket received {action} position : {data} \\n\\t reporting Jeri only for position adjustment")
+                    self.position_monitor.report_jeri_for_positions(data)
                 else:
                     self._logger_.info(f"Websocket received ignored {action} position : {data}")
                 # else:
