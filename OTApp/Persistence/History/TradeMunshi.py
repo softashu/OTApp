@@ -2,7 +2,8 @@ import json
 import os
 import queue
 import threading
-from datetime import datetime, time
+from datetime import datetime
+import time
 
 from queue import Empty
 
