@@ -2,11 +2,12 @@ import queue
 import threading
 import time
 from collections import defaultdict
-from typing import List, Dict, Any
+from typing import Any
 
 from OTApp.Configuration.DataClasses import OrderResult, PositionData
 from OTApp.Configuration.Enums import OrderSide
 from OTApp.Logger.Logger import AppLogger
+from OTApp.Persistence.History.TradeMunshi import TradeMunshi
 from OTApp.WebSocket.SubscriptionManager import SubscriptionManager
 
 """
@@ -45,7 +46,7 @@ class BahaduarDass():
         self.order_queue = queue.Queue()
         self._yet_filled_: dict[str, dict[str, OrderResult]] = defaultdict(dict)
         self._filled: dict[str, dict[str, OrderResult]] = defaultdict(dict)
-        self._order_position_map: dict[str, dict[PositionData, OrderResult]] = defaultdict(dict)
+        self._position_order_map: dict[str, dict[PositionData, OrderResult]] = defaultdict(dict)
         self.stop_pending_order_watch_event = threading.Event()
 
         # The dedicated spirit: processing in the background
@@ -57,6 +58,7 @@ class BahaduarDass():
         self.order_price_chase_thread.start()
         self.WAIT_TIME = 60  # we will wait to fill order after that we have to make changes to make it fill
         self.subscriber_manager = SubscriptionManager(self._logger_)
+        self.trade_munshi = TradeMunshi(self._logger_)
 
     def report_bahadur_dass(self, order_data):
         """ The sense: instantly catching the market event """
@@ -257,7 +259,9 @@ class BahaduarDass():
             order_data: OrderResult = self.find_out_order_data_for_position(position_data)
             if order_data:
                 with self._order_position_lock_:
-                    self._order_position_map.update[order_data.strategy_name].update({position_data: order_data})
+                    self._position_order_map.update[order_data.strategy_name].update({position_data: order_data})
+                    # add position order map to trade munshi position_order_queue for persist
+                    self.trade_munshi.save_position_snapshot(self._position_order_map)
                 # delete order from self._yet_filled_ dictionary but unsubscribe as we need feed for position tracking
                 self.handle_delete_order(order_data=order_data.data, unsubscribe=False)
             else:
@@ -303,5 +307,5 @@ class BahaduarDass():
             # Unsubscribe feed symbols
             self.subscriber_manager.unsubscribe_feeds(symbols=[symbol], channel='l2_orderbook', public=True)
             # Clean the Order / Position map
-            if order_data.strategy_name in self._order_position_map:
-                self._order_position_map[order_data.strategy_name].pop(position_data, None)
+            if order_data.strategy_name in self._position_order_map:
+                self._position_order_map[order_data.strategy_name].pop(position_data, None)

@@ -22,6 +22,7 @@ class Orchestrator:
         bahaduar_dass_instance = BahaduarDass()
         # jeri_instance to monitor position data
         jeri_instance = Jeri()
+        # initiating TradeMunshi
         # Launching the Vigilant Sentinel for private data
         listener = DeltaWebSocketListener(api_key=key,
                                           api_secret=secret,

@@ -4,6 +4,8 @@ import queue
 import threading
 from datetime import datetime, time
 
+from queue import Empty
+
 from OTApp.Logger.Logger import AppLogger
 
 """
@@ -26,10 +28,11 @@ from OTApp.Logger.Logger import AppLogger
 
 
 class TradeMunshi():
-    def __init__(self):
-        self._logger_ = AppLogger().get_log()
+    def __init__(self, logger=None):
+        self._logger_ = logger if logger else AppLogger().get_log()
         # 1. Initialize the Thread-Safe Memory Queue
         self.trade_queue = queue.Queue()
+        self.position_order_queue = queue.Queue()
         # 2. Start the Background Dedicated Thread
         self.munshi_ji_thread = threading.Thread(target=self._minshi_worker, daemon=True)
         self.munshi_ji_thread.start()
@@ -41,26 +44,48 @@ class TradeMunshi():
         self.trade_queue.put(trade_record)
         # Main program is now free!
 
+    def save_position_snapshot(self, position_order_map_record):
+        """
+        Main Task: Just puts data in memory and returns instantly.
+        """
+        self.position_order_queue.put(position_order_map_record)
+        # Main program is now free!
+
     def _minshi_worker(self):
         """
         Background Task: Dedicated to saving data with retry logic.
         """
         while True:
-            # Step 2: Retrieve from memory (blocks until data is available)
-            trade_data = self.trade_queue.get()
-            success = False
-            retries = 0
-            while not success and retries < 5:
-                try:
-                    self.save_trade_snapshot(trade_data)
-                    success = True
-                    # Step 3: Success! Data is now cleared from the 'trade_data' variable
-                    # and the queue automatically as we move to the next item.
-                except Exception as e:
-                    retries += 1
-                    time.sleep(2)  # Wait before retry
-            # Mark the task as done in the queue
-            self.trade_queue.task_done()
+            try:
+                self.process_market_analysis()
+            except Exception as e:
+                self._logger_.error(f"Error while persisting Market Analysis: {str(e)}")
+            try:
+                self.process_position_order()
+            except Exception as e:
+                self._logger_.error(f"Error while persisting Position Order: {str(e)}")
+
+    def process_market_analysis(self):
+        # Step 2: Retrieve from memory (blocks until data is available)
+        trade_data = None
+        try:
+            trade_data = self.trade_queue.get(block=False)
+        except Empty as e:
+            # data not available to persist so skipping the rest code
+            return
+        success = False
+        retries = 0
+        while not success and retries < 5:
+            try:
+                self.save_trade_snapshot(trade_data)
+                success = True
+                # Step 3: Success! Data is now cleared from the 'trade_data' variable
+                # and the queue automatically as we move to the next item.
+            except Exception as e:
+                retries += 1
+                time.sleep(2)  # Wait before retry
+        # Mark the task as done in the queue
+        self.trade_queue.task_done()
 
     def save_trade_snapshot(self, trade_record):
         try:
@@ -125,3 +150,62 @@ class TradeMunshi():
         # }
 
         # return trade_record
+
+    def process_position_order(self):
+        # Step 2: Retrieve from memory (blocks until data is available)
+        position_order_map_data = None
+        try:
+            position_order_map_data = self.position_order_queue.get(block=False)
+        except Empty as e:
+            # data not available to persist so skipping the rest code
+            return
+        success = False
+        retries = 0
+        while not success and retries < 5:
+            try:
+                self.save_position_order_snapshot(position_order_map_data)
+                success = True
+                # Step 3: Success! Data is now cleared from the 'trade_data' variable
+                # and the queue automatically as we move to the next item.
+            except Exception as e:
+                retries += 1
+                time.sleep(2)  # Wait before retry
+        # Mark the task as done in the queue
+        self.position_order_queue.task_done()
+
+    def save_position_order_snapshot(self, position_order_map_data):
+        try:
+            self.persist_as_json(position_order_map_data)
+            # we need to persist in Sqlite also
+        except Exception as e:
+            self._logger_.error(
+                f"🚨 CRITICAL ERROR: Position - Order  snapshot failed! | "
+            )
+
+    def persist_as_json(self, position_order_map_data):
+        # Create a unique filename using timestamp and symbol
+        # 1. Prepare unique metadata
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # filename = f"OTApp/Persistence/History/trade/trade_{timestamp}_{trade_record['trade_symbol']}.json"
+
+        # 2. Define path and ensure the ACTUAL directory exists
+        # 1. Get the Absolute Root of your Project
+        # This points to the directory where THIS script lives
+        base_path = os.path.dirname(os.path.abspath(__file__)) + "/position_orders"
+        filename = f"{base_path}/position_order_{timestamp}.json"
+
+        # os.path.dirname gets the folder path from the filename string
+        os.makedirs(os.path.dirname(filename), exist_ok=True)
+
+        # 3. Save with pretty-printing
+        with open(filename, 'w', encoding='utf-8') as f:
+            json.dump(position_order_map_data, f, indent=4, default=str)  # default=str handles datetime objects
+            f.flush()  # Pushes data from Python to the OS
+            os.fsync(f.fileno())  # Pushes data from the OS to the actual disk
+
+        # 4. Success Log
+        self._logger_.info(
+            f"📜 Position order SNAPSHOT ARCHIVED | "
+            f"Path: {filename} 📂 | "
+            f"Status: Analysis Persisted ✅"
+        )
