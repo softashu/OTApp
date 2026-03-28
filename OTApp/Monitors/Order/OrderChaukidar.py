@@ -4,7 +4,7 @@ import time
 from collections import defaultdict
 from typing import Any
 
-from OTApp.Configuration.DataClasses import OrderResult, PositionData
+from OTApp.Configuration.DataClasses import OrderResult, PositionData, FilledOrderResult
 from OTApp.Configuration.Enums import OrderSide
 from OTApp.Logger.Logger import AppLogger
 from OTApp.Persistence.History.TradeMunshi import TradeMunshi
@@ -46,7 +46,7 @@ class BahaduarDass():
         self.order_queue = queue.Queue()
         self._yet_filled_: dict[str, dict[str, OrderResult]] = defaultdict(dict)
         self._filled: dict[str, dict[str, OrderResult]] = defaultdict(dict)
-        self._position_order_map: dict[str, dict[PositionData, OrderResult]] = defaultdict(dict)
+        self._positions: dict[str, dict[str, PositionData]] = defaultdict(dict)
         self.stop_pending_order_watch_event = threading.Event()
 
         # The dedicated spirit: processing in the background
@@ -116,6 +116,9 @@ class BahaduarDass():
             self.handle_delete_order(order_data)
         elif action in {'create', 'update'}:
             self.handle_order_data(order_data)
+        elif action is None and order_data.get('type') == 'v2/user_trades':
+            self._logger_.info(f"Order with id = {order_data.get('o')} has been filled ")
+            self.handle_order_fill_data(order_data)
         else:
             self._logger_.critical(f"Getting unhandled order data {order_data}")
         return order_data
@@ -259,9 +262,10 @@ class BahaduarDass():
             order_data: OrderResult = self.find_out_order_data_for_position(position_data)
             if order_data:
                 with self._order_position_lock_:
-                    self._position_order_map.update[order_data.strategy_name].update({position_data: order_data})
+                    self._positions.update[order_data.strategy_name].update(
+                        {position_data.symbol: position_data})
                     # add position order map to trade munshi position_order_queue for persist
-                    self.trade_munshi.save_position_snapshot(self._position_order_map)
+                    self.trade_munshi.save_position_snapshot(self._positions)
                 # delete order from self._yet_filled_ dictionary but unsubscribe as we need feed for position tracking
                 self.handle_delete_order(order_data=order_data.data, unsubscribe=False)
             else:
@@ -292,6 +296,7 @@ class BahaduarDass():
                     if symbol_validation and size_validation and product_id_validation and side_validation:
                         order_data_cls = order_data
                         position_data.strategy_name = order_data.strategy_name
+                        position_data.orders.append(order_data_cls)
                         break
         return order_data_cls
 
@@ -307,5 +312,44 @@ class BahaduarDass():
             # Unsubscribe feed symbols
             self.subscriber_manager.unsubscribe_feeds(symbols=[symbol], channel='l2_orderbook', public=True)
             # Clean the Order / Position map
-            if order_data.strategy_name in self._position_order_map:
-                self._position_order_map[order_data.strategy_name].pop(position_data, None)
+            if order_data.strategy_name in self._positions:
+                self._positions[order_data.strategy_name].pop(position_data.symbol, None)
+
+    def handle_order_fill_data(self, filled_order_data):
+        filled_order: FilledOrderResult = self.prepare_filled_order_data_class(filled_order_data)
+        # search order in _yet_filled_ and update existing order
+        order_data_cls: OrderResult = self.deal_order_with_fill_order(filled_order)
+
+    def deal_order_with_fill_order(self, filled_order: FilledOrderResult) -> OrderResult:
+        order_data_cls: OrderResult = None
+        with (self._active_order_lock_):
+            for strategy in self._yet_filled_.keys():
+                for order_data in self._yet_filled_[strategy].values():
+                    order_validation = order_data.order_id == filled_order.order_id
+                    size_validation = order_data.size == filled_order.fill_size
+                    if order_validation:
+                        order_data.filled_orders.append(filled_order)
+                        order_data.unfilled_size = order_data.unfilled_size - filled_order.fill_size
+                        order_data_cls = order_data
+                        if size_validation or order_data.unfilled_size == 0:
+                            # move order to  self._filled
+                            assert order_data.symbol is not None, "Symbol must be set for filled orders"
+                            self._filled[order_data.strategy_name][order_data.symbol] = order_data_cls
+                            # delete order from self._yet_filled_ dictionary but unsubscribe as we need feed for position tracking
+                            self.handle_delete_order(order_data=order_data.data, unsubscribe=False)
+                        break
+        return order_data_cls
+
+    def prepare_filled_order_data_class(self, filled_order_data):
+        filled_order: FilledOrderResult = FilledOrderResult()
+        filled_order.order_id = filled_order_data.get('o')
+        filled_order.symbol = filled_order_data.get('sy')
+        filled_order.strategy_name = filled_order_data.get('c')
+        filled_order.fill_size = filled_order_data.get('s')
+        filled_order.product_id = filled_order_data.get('i')
+        filled_order.side = OrderSide.SELL if filled_order_data.get('S') == 'sell' else OrderSide.BUY
+        filled_order.fill_id = filled_order_data.get('f')
+        filled_order.reason = filled_order_data.get('R')
+        filled_order.fill_price = filled_order_data.get('p')
+        filled_order.data = filled_order_data
+        return filled_order

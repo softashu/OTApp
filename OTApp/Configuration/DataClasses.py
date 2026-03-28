@@ -3,11 +3,27 @@
 # ============================================================================
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import Optional, List
+from typing import Optional, List, Dict
 
 from OTApp.Configuration.Enums import OrderSide, StrategyState
+
+
+@dataclass
+class FilledOrderResult:
+    strategy_name: str = None
+    order_id: Optional[int] = None
+    product_id: Optional[int] = None
+    symbol: Optional[str] = None
+    side: Optional[OrderSide] = None
+    fill_size: int = 0
+    fill_id = None
+    reason: Optional[str] = None
+    fill_price: Optional[float] = None
+    position_size: Optional[float] = None
+    fill_at: Optional[float] = None
+    data: Dict = None
 
 
 @dataclass
@@ -23,6 +39,7 @@ class OrderResult:
     state: Optional[str] = None
     average_fill_price: Optional[str] = None
     error: Optional[str] = None
+    filled_orders: List[FilledOrderResult] = field(default_factory=list)
     data = None
     created_at: float = time.time()  # Timestamp in seconds
     popcorn: threading.Timer = None
@@ -44,6 +61,7 @@ class PositionData:
     realized_pnl: Optional[Decimal] = None
     unrealized_pnl: Optional[float] = None
     current_price: Optional[float] = None
+    orders: List[OrderResult] = field(default_factory=list)
     data = None  # row position data
 
 

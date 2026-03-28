@@ -132,9 +132,6 @@ class DeltaWebSocketListener:
                     self.position_monitor.report_jeri_for_positions(data)
                 else:
                     self._logger_.info(f"Websocket received ignored {action} position : {data}")
-                # else:
-                #     pprint(data)
-                #     self.monitor.report_fill(data)
             elif msg_type == 'v2/user_trades':
                 action = data.get('action')
                 self._logger_.info(
