@@ -76,7 +76,11 @@ class DeltaWebSocketPublicListener:
                 current_time = time.time()
                 # Check if enough time has elapsed since last processing
                 if current_time - self.process_time_map[symbol] >= self.PENDING_ORDER_PROCESS_INTERVAL:
-                    self._logger_.info(f"L2_ORDERBOOK: {message_json}")
+                    self._logger_.info(f"Processing L2_ORDERBOOK of {symbol}.....")
+                    # Log only the top of the book:
+                    best_bid = message_json['buy'][0]['limit_price']
+                    best_ask = message_json['sell'][0]['limit_price']
+                    self._logger_.info(f"{symbol} Spread: {message_json['spread']} | Bid: {best_bid} | Ask: {best_ask}")
                     self.process_time_map[symbol] = current_time
             elif type in {'announcements', 'system_status', 'product_updates'}:
                 self.public_announcement_monitor.on_announcement(message_json)

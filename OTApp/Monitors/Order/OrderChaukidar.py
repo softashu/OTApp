@@ -326,10 +326,10 @@ class BahaduarDass():
             for strategy in self._yet_filled_.keys():
                 for order_data in self._yet_filled_[strategy].values():
                     order_validation = order_data.order_id == filled_order.order_id
-                    size_validation = order_data.size == filled_order.fill_size
+                    size_validation = order_data.size == int(filled_order.fill_size)
                     if order_validation:
                         order_data.filled_orders.append(filled_order)
-                        order_data.unfilled_size = order_data.unfilled_size - filled_order.fill_size
+                        order_data.unfilled_size = order_data.unfilled_size - int(filled_order.fill_size)
                         order_data_cls = order_data
                         if size_validation or order_data.unfilled_size == 0:
                             # move order to  self._filled
