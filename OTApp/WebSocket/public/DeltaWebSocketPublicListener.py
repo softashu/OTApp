@@ -50,7 +50,7 @@ class DeltaWebSocketPublicListener:
         """
         self.subscribe(ws, channel="product_updates", symbols=None)
         # bitcoin mark price update
-        self.subscribe(ws, channel="mark_price", symbols=['MARK:BTCUSD'])
+        # self.subscribe(ws, channel="mark_price", symbols=['MARK:BTCUSD'])
 
     def on_message(self, ws, message):
         try:

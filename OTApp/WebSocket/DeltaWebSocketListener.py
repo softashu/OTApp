@@ -127,8 +127,9 @@ class DeltaWebSocketListener:
                     self.position_monitor.report_jeri_for_positions(data)
                     self.order_monitor.report_bahadur_dass_for_position(data)
                 elif action in {'update'}:
+                    symbol = data.get('product_symbol')
                     self._logger_.info(
-                        f"Websocket received {action} position : {data} \\n\\t reporting Jeri only for position adjustment")
+                        f"Websocket received {action} position of {symbol}")
                     self.position_monitor.report_jeri_for_positions(data)
                 else:
                     self._logger_.info(f"Websocket received ignored {action} position : {data}")

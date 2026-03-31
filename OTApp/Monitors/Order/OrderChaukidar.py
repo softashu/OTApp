@@ -262,12 +262,15 @@ class BahaduarDass():
             order_data: OrderResult = self.find_out_order_data_for_position(position_data)
             if order_data:
                 with self._order_position_lock_:
-                    self._positions.update[order_data.strategy_name].update(
-                        {position_data.symbol: position_data})
+                    strategy_name = order_data.strategy_name if order_data.strategy_name else f"{order_data.symbol}_strategy"
+                    # Access the dictionary for the specific strategy, then call .update()
+                    self._positions[strategy_name].update({
+                        position_data.symbol: position_data
+                    })
                     # add position order map to trade munshi position_order_queue for persist
                     self.trade_munshi.save_position_snapshot(self._positions)
-                # delete order from self._yet_filled_ dictionary but unsubscribe as we need feed for position tracking
-                self.handle_delete_order(order_data=order_data.data, unsubscribe=False)
+                    # delete order from self._yet_filled_ dictionary but unsubscribe as we need feed for position tracking
+                    self.handle_delete_order(order_data=order_data.data, unsubscribe=True)
             else:
                 self._logger_.info(f"No ! order data found for {position_data} /n/t escaping position handling ...")
         except Exception as e:
@@ -336,7 +339,7 @@ class BahaduarDass():
                             assert order_data.symbol is not None, "Symbol must be set for filled orders"
                             self._filled[order_data.strategy_name][order_data.symbol] = order_data_cls
                             # delete order from self._yet_filled_ dictionary but unsubscribe as we need feed for position tracking
-                            self.handle_delete_order(order_data=order_data.data, unsubscribe=False)
+                            self.handle_delete_order(order_data=order_data.data, unsubscribe=True)
                         break
         return order_data_cls
 

@@ -117,7 +117,7 @@ class BTC_15_Delta_Strangle:
                             trade_record.update({'margin_sufficient': margin_sufficient})
                             if margin_sufficient:
                                 # Place order
-                                place_trade_resp = OrderManager().place_orders(trade_record)
+                                place_trade_resp = OrderManager(self._loger_).place_orders(trade_record)
                                 # Update trade_record with the actual execution results for history analysis
                                 trade_record['execution_history'] = place_trade_resp
                                 # Save all market analysis data for later use
