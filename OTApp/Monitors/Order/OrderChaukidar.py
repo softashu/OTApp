@@ -326,10 +326,6 @@ class BahaduarDass():
     def deal_order_with_fill_order(self, filled_order: FilledOrderResult) -> OrderResult:
         order_data_cls: OrderResult = None
         handle_delete_order = False
-        # @TODO : fix dead lock situation
-        # we are calling another locked code block from one locked block that is deadlock situation
-        # self.handle_delete_order(order_data=order_data.data, unsubscribe=True) has also have lock on self._active_order_lock_
-        # that the reason for code not getting complete
         with (self._active_order_lock_):
             for strategy in self._yet_filled_.keys():
                 for order_data in self._yet_filled_[strategy].values():
