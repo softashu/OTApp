@@ -325,6 +325,11 @@ class BahaduarDass():
 
     def deal_order_with_fill_order(self, filled_order: FilledOrderResult) -> OrderResult:
         order_data_cls: OrderResult = None
+        handle_delete_order = False
+        # @TODO : fix dead lock situation
+        # we are calling another locked code block from one locked block that is deadlock situation
+        # self.handle_delete_order(order_data=order_data.data, unsubscribe=True) has also have lock on self._active_order_lock_
+        # that the reason for code not getting complete
         with (self._active_order_lock_):
             for strategy in self._yet_filled_.keys():
                 for order_data in self._yet_filled_[strategy].values():
@@ -338,9 +343,12 @@ class BahaduarDass():
                             # move order to  self._filled
                             assert order_data.symbol is not None, "Symbol must be set for filled orders"
                             self._filled[order_data.strategy_name][order_data.symbol] = order_data_cls
-                            # delete order from self._yet_filled_ dictionary but unsubscribe as we need feed for position tracking
-                            self.handle_delete_order(order_data=order_data.data, unsubscribe=True)
+                            handle_delete_order = True
                         break
+
+        if handle_delete_order:
+            # delete order from outside of same lock (self._active_order_lock_) from self._yet_filled_ dictionary but unsubscribe as we need feed for position tracking
+            self.handle_delete_order(order_data=order_data.data, unsubscribe=True)
         return order_data_cls
 
     def prepare_filled_order_data_class(self, filled_order_data):

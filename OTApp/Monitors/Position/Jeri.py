@@ -45,5 +45,5 @@ class Jeri():
     def report_jeri_for_positions(self, position_data):
         action = position_data.get('action')
         symbol = position_data.get('product_symbol')
-        self._logger_.info(f"Jeri received {action} position for {symbol} with position data : {position_data}")
+        self._logger_.info(f"Jeri received {action} position for {symbol} with data : {position_data}")
         self.order_queue.put(position_data)
