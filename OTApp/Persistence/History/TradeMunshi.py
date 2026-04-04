@@ -177,7 +177,9 @@ class TradeMunshi():
     def save_position_order_snapshot(self, position_order_map_data):
         try:
             self.persist_as_json(position_order_map_data)
-            # we need to persist in Sqlite also
+            self._logger_.info(F"Json persisted for the positions {position_order_map_data}")
+            # @TODO : we need to persist in Sqlite also
+            self.persist_position_in_Sqlite(position_order_map_data)
         except Exception as e:
             self._logger_.error(
                 f"🚨 CRITICAL ERROR: Position - Order  snapshot failed! | "
@@ -210,3 +212,6 @@ class TradeMunshi():
             f"Path: {filename} 📂 | "
             f"Status: Analysis Persisted ✅"
         )
+
+    def persist_position_in_Sqlite(self, position_order_map_data):
+        pass
