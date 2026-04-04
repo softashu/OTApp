@@ -15,16 +15,15 @@
     the Great Accountant of the Universe.
 """
 import json
+import os
 import sqlite3
 import threading
 from datetime import datetime
 from enum import Enum
 
-from OTApp.Configuration.DataClasses import PositionData
-
-from Agrasandhani import TABLES  # Import the blueprint
-
 from OTApp.Logger.Logger import AppLogger
+# Import the blueprint
+from OTApp.Persistence.sqlite.Agrasandhani import TABLES
 from OTApp.Persistence.sqlite.Position_Data_Encoder import PositionDataEncoder
 
 
@@ -46,10 +45,15 @@ class Chitragupt:
                     cls._instance._initialized = False
         return cls._instance
 
-    def __init__(self, db_path="universal_trade_ledger.db", logger=None):
+    def __init__(self, db_path=None, logger=None):
         # Ensure initialization only happens once
         if self._initialized:
             return
+
+        # If no path is provided, default to this script's directory
+        if db_path is None:
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            db_path = os.path.join(base_dir, "universal_trade_ledger.db")
 
         with self._lock:
             if not self._initialized:
@@ -71,75 +75,75 @@ class Chitragupt:
 
     def sthapana(self):
         """Manifests the tables defined in Agrasandhani."""
-        with self._lock:
-            try:
-                for schema in TABLES:
-                    self.cursor.execute(schema['sql'])
-                    for index_sql in schema.get('indices', []):
-                        self.cursor.execute(index_sql)
-                self.conn.commit()
-                self._logger_.info("🔱 Agrasandhani has been inscribed into the database.")
-            except Exception as e:
-                self.conn.rollback()
-                self._logger_.error(f"Error during Sthapana: {e}")
+        try:
+            for schema in TABLES:
+                self.cursor.execute(schema['sql'])
+                for index_sql in schema.get('indices', []):
+                    self.cursor.execute(index_sql)
+            self.conn.commit()
+            self._logger_.info("🔱 Agrasandhani has been inscribed into the database.")
+        except Exception as e:
+            self.conn.rollback()
+            self._logger_.error(f"Error during Sthapana: {e}")
 
         self._logger_.info(f"Chitragupt has opened the ledger at: {self.db_path}")
 
-    def position_lekhana(self, position_order_map_record):
-        """
-        CREATE (Lekhana - Writing): Records a new deed into the ledger.
 
-        Thread-safe Write (Lekhana)
-        LEKHANA (Bulk Inscription):
-        Processes 'position_order_map_record' which is a list of dictionaries.
-        Each record is inscribed into the eternal 'trade_positions' ledger.
-        """
-        if not position_order_map_record:
-            return
+def position_lekhana(self, position_order_map_record):
+    """
+    CREATE (Lekhana - Writing): Records a new deed into the ledger.
 
-        # Prepare the list of tuples for SQL execution
-        # We use INSERT OR REPLACE to handle records that already exist (Updates them)
-        sql = """
+    Thread-safe Write (Lekhana)
+    LEKHANA (Bulk Inscription):
+    Processes 'position_order_map_record' which is a list of dictionaries.
+    Each record is inscribed into the eternal 'trade_positions' ledger.
+    """
+    if not position_order_map_record:
+        return
+
+    # Prepare the list of tuples for SQL execution
+    # We use INSERT OR REPLACE to handle records that already exist (Updates them)
+    sql = """
             INSERT OR REPLACE INTO trade_positions 
             (position_id, order_id, strategy_name, symbol, side, is_filled, trade_data, updated_at) 
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """
 
-        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        data_to_inscribe = []
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    data_to_inscribe = []
 
-        # Iterating through strategies (e.g., 'SEIUSD_strategy')
-        for strategy_name, positions in position_order_map_record.items():
-            for symbol, pos_obj in positions.items():
-                # Extracting the truth from the map
-                # 1. Extract the Primary Identifier
-                # We use the position_id from the dataclass; fallback to symbol if empty
-                p_id = pos_obj.position_id if pos_obj.position_id else f"{symbol}_{strategy_name}"
+    # Iterating through strategies (e.g., 'SEIUSD_strategy')
+    for strategy_name, positions in position_order_map_record.items():
+        for symbol, pos_obj in positions.items():
+            # Extracting the truth from the map
+            # 1. Extract the Primary Identifier
+            # We use the position_id from the dataclass; fallback to symbol if empty
+            p_id = pos_obj.position_id if pos_obj.position_id else f"{symbol}_{strategy_name}"
 
-                # 2. Extract the Order Identifier
-                # We take the ID of the last order in the list as the 'active' order
-                o_id = str(pos_obj.orders[-1].order_id) if pos_obj.orders else "N/A"
+            # 2. Extract the Order Identifier
+            # We take the ID of the last order in the list as the 'active' order
+            o_id = str(pos_obj.orders[-1].order_id) if pos_obj.orders else "N/A"
 
-                # Extracting the "Truth Columns" for the database
-                side_val = pos_obj.side.value if isinstance(pos_obj.side, Enum) else str(pos_obj.side)
-                is_filled_val = 1 if pos_obj.filled else 0
+            # Extracting the "Truth Columns" for the database
+            side_val = pos_obj.side.value if isinstance(pos_obj.side, Enum) else str(pos_obj.side)
+            is_filled_val = 1 if pos_obj.filled else 0
 
-                # 3. Serialize the Whole Being (JSON)
-                # This captures all nested orders and filled_orders in one blob.
-                t_data = json.dumps(pos_obj.data, cls=PositionDataEncoder)
+            # 3. Serialize the Whole Being (JSON)
+            # This captures all nested orders and filled_orders in one blob.
+            t_data = json.dumps(pos_obj.data, cls=PositionDataEncoder)
 
-                data_to_inscribe.append((p_id, o_id, strategy_name, symbol,
-                                         side_val, is_filled_val, t_data, now))
+            data_to_inscribe.append((p_id, o_id, strategy_name, symbol,
+                                     side_val, is_filled_val, t_data, now))
 
-        with self._lock:
-            # executemany is the high-performance way to write multiple entries
-            try:
-                self.cursor.executemany(sql, data_to_inscribe)
-                self.conn.commit()
-                self._logger_.info(f"🔱 {len(data_to_inscribe)} records have been inscribed/updated in the ledger.")
-            except Exception as e:
-                self.conn.rollback()
-                self._logger_.error(f"❌ Lekhana failed. The records remain in the void: {e}")
+    with self._lock:
+        # executemany is the high-performance way to write multiple entries
+        try:
+            self.cursor.executemany(sql, data_to_inscribe)
+            self.conn.commit()
+            self._logger_.info(f"🔱 {len(data_to_inscribe)} records have been inscribed/updated in the ledger.")
+        except Exception as e:
+            self.conn.rollback()
+            self._logger_.error(f"❌ Lekhana failed. The records remain in the void: {e}")
 
 
 def darshana(self, table, criteria=None):
@@ -191,4 +195,3 @@ def visarjana(self):
     """
     self.connection.close()
     print("The Kalam (pen) is rested. The ledger is sealed.")
-

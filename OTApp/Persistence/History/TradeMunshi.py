@@ -1,3 +1,4 @@
+import inspect
 import json
 import os
 import queue
@@ -8,6 +9,7 @@ import time
 from queue import Empty
 
 from OTApp.Logger.Logger import AppLogger
+from OTApp.Persistence.sqlite.SqliteManager import Chitragupt
 
 """
 🔱 The "Ghost-Writer" Architecture
@@ -178,8 +180,8 @@ class TradeMunshi():
         try:
             self.persist_as_json(position_order_map_data)
             self._logger_.info(F"Json persisted for the positions {position_order_map_data}")
-            # @TODO : we need to persist in Sqlite also
-            self.persist_position_in_Sqlite(position_order_map_data)
+            # We also persist in Sqlite
+            self.persist_position_in_sqlite(position_order_map_data)
         except Exception as e:
             self._logger_.error(
                 f"🚨 CRITICAL ERROR: Position - Order  snapshot failed! | "
@@ -213,5 +215,12 @@ class TradeMunshi():
             f"Status: Analysis Persisted ✅"
         )
 
-    def persist_position_in_Sqlite(self, position_order_map_data):
-        pass
+    def persist_position_in_sqlite(self, position_order_map_data):
+        try:
+            chitragupta_instance = Chitragupt(logger=self._logger_)
+            chitragupta_instance.position_lekhana(position_order_map_data)
+            self._logger_.info(
+                f"{self.__class__.__name__}'{inspect.currentframe().f_code.co_name} persisted position order map successfully")
+        except Exception as e:
+            self._logger_.error(
+                f"{self.__class__.__name__}'{inspect.currentframe().f_code.co_name} persisted position order map failed with {str(e)}")

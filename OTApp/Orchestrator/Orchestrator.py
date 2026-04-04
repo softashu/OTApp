@@ -8,6 +8,7 @@ from OTApp.Logger.Logger import AppLogger
 from OTApp.Monitors.Order.OrderChaukidar import BahaduarDass
 from OTApp.Monitors.Position.Jeri import Jeri
 from OTApp.Monitors.system.PublicAnnouncement.Announcements import PublicAnnouncement
+from OTApp.Persistence.sqlite.SqliteManager import Chitragupt
 from OTApp.Strategy.BTC_15_Delta_Short_Strangle import BTC_15_Delta_Strangle
 from OTApp.WebSocket.DeltaWebSocketListener import DeltaWebSocketListener
 from OTApp.WebSocket.public.DeltaWebSocketPublicListener import DeltaWebSocketPublicListener
@@ -22,7 +23,11 @@ class Orchestrator:
         bahaduar_dass_instance = BahaduarDass()
         # jeri_instance to monitor position data
         jeri_instance = Jeri()
+        # initiating Sqlite as with Chitragupt Ji Maharaj.
+        chitragupta_instance = Chitragupt(logger=self._logger_)
+
         # initiating TradeMunshi
+
         # Launching the Vigilant Sentinel for private data
         listener = DeltaWebSocketListener(api_key=key,
                                           api_secret=secret,
