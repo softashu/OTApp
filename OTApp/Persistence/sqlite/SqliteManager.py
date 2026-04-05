@@ -166,7 +166,7 @@ class Chitragupt:
 
             try:
                 self.cursor.execute(sql, tuple(update_dict.values()))
-                self.connection.commit()
+                self.conn.commit()
                 print("The record has been transformed as per the new truth.")
             except Exception as e:
                 print(f"Error during Parivartana: {e}")
@@ -179,7 +179,7 @@ class Chitragupt:
             sql = f"DELETE FROM {table} WHERE {criteria}"
             try:
                 self.cursor.execute(sql)
-                self.connection.commit()
+                self.conn.commit()
                 print("The entry has returned to the void (dissolved).")
             except Exception as e:
                 print(f"Error during Vilaya: {e}")
@@ -188,5 +188,5 @@ class Chitragupt:
         """
         CLOSE (Visarjana - Formal Departure): Safely closes the ledger.
         """
-        self.connection.close()
+        self.conn.close()
         print("The Kalam (pen) is rested. The ledger is sealed.")
