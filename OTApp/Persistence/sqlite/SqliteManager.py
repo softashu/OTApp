@@ -88,110 +88,105 @@ class Chitragupt:
 
         self._logger_.info(f"Chitragupt has opened the ledger at: {self.db_path}")
 
-
-def position_lekhana(self, position_order_map_record):
-    """
-    CREATE (Lekhana - Writing): Records a new deed into the ledger.
-
-    Thread-safe Write (Lekhana)
-    LEKHANA (Bulk Inscription):
-    Processes 'position_order_map_record' which is a list of dictionaries.
-    Each record is inscribed into the eternal 'trade_positions' ledger.
-    """
-    if not position_order_map_record:
-        return
-
-    # Prepare the list of tuples for SQL execution
-    # We use INSERT OR REPLACE to handle records that already exist (Updates them)
-    sql = """
-            INSERT OR REPLACE INTO trade_positions 
-            (position_id, order_id, strategy_name, symbol, side, is_filled, trade_data, updated_at) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    def position_lekhana(self, position_order_map_record):
         """
+        CREATE (Lekhana - Writing): Records a new deed into the ledger.
 
-    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    data_to_inscribe = []
+        Thread-safe Write (Lekhana)
+        LEKHANA (Bulk Inscription):
+        Processes 'position_order_map_record' which is a list of dictionaries.
+        Each record is inscribed into the eternal 'trade_positions' ledger.
+        """
+        if not position_order_map_record:
+            return
 
-    # Iterating through strategies (e.g., 'SEIUSD_strategy')
-    for strategy_name, positions in position_order_map_record.items():
-        for symbol, pos_obj in positions.items():
-            # Extracting the truth from the map
-            # 1. Extract the Primary Identifier
-            # We use the position_id from the dataclass; fallback to symbol if empty
-            p_id = pos_obj.position_id if pos_obj.position_id else f"{symbol}_{strategy_name}"
+        # Prepare the list of tuples for SQL execution
+        # We use INSERT OR REPLACE to handle records that already exist (Updates them)
+        sql = """
+                INSERT OR REPLACE INTO trade_positions 
+                (position_id, order_id, strategy_name, symbol, side, is_filled, trade_data, updated_at) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """
 
-            # 2. Extract the Order Identifier
-            # We take the ID of the last order in the list as the 'active' order
-            o_id = str(pos_obj.orders[-1].order_id) if pos_obj.orders else "N/A"
+        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        data_to_inscribe = []
 
-            # Extracting the "Truth Columns" for the database
-            side_val = pos_obj.side.value if isinstance(pos_obj.side, Enum) else str(pos_obj.side)
-            is_filled_val = 1 if pos_obj.filled else 0
+        # Iterating through strategies (e.g., 'SEIUSD_strategy')
+        for strategy_name, positions in position_order_map_record.items():
+            for symbol, pos_obj in positions.items():
+                # Extracting the truth from the map
+                # 1. Extract the Primary Identifier
+                # We use the position_id from the dataclass; fallback to symbol if empty
+                p_id = pos_obj.position_id if pos_obj.position_id else f"{symbol}_{strategy_name}"
 
-            # 3. Serialize the Whole Being (JSON)
-            # This captures all nested orders and filled_orders in one blob.
-            t_data = json.dumps(pos_obj.data, cls=PositionDataEncoder)
+                # 2. Extract the Order Identifier
+                # We take the ID of the last order in the list as the 'active' order
+                o_id = str(pos_obj.orders[-1].order_id) if pos_obj.orders else "N/A"
 
-            data_to_inscribe.append((p_id, o_id, strategy_name, symbol,
-                                     side_val, is_filled_val, t_data, now))
+                # Extracting the "Truth Columns" for the database
+                side_val = pos_obj.side.value if isinstance(pos_obj.side, Enum) else str(pos_obj.side)
+                is_filled_val = 1 if pos_obj.filled else 0
 
-    with self._lock:
-        # executemany is the high-performance way to write multiple entries
-        try:
-            self.cursor.executemany(sql, data_to_inscribe)
-            self.conn.commit()
-            self._logger_.info(f"🔱 {len(data_to_inscribe)} records have been inscribed/updated in the ledger.")
-        except Exception as e:
-            self.conn.rollback()
-            self._logger_.error(f"❌ Lekhana failed. The records remain in the void: {e}")
+                # 3. Serialize the Whole Being (JSON)
+                # This captures all nested orders and filled_orders in one blob.
+                t_data = json.dumps(pos_obj.data, cls=PositionDataEncoder)
 
+                data_to_inscribe.append((p_id, o_id, strategy_name, symbol,
+                                         side_val, is_filled_val, t_data, now))
 
-def darshana(self, table, criteria=None):
-    """
-    READ (Darshana - Vision): Observes the existing records.
-    """
-    with self._lock:
-        sql = f"SELECT * FROM {table}"
-        if criteria:
-            sql += f" WHERE {criteria}"
+        with self._lock:
+            # executemany is the high-performance way to write multiple entries
+            try:
+                self.cursor.executemany(sql, data_to_inscribe)
+                self.conn.commit()
+                self._logger_.info(f"🔱 {len(data_to_inscribe)} records have been inscribed/updated in the ledger.")
+            except Exception as e:
+                self.conn.rollback()
+                self._logger_.error(f"❌ Lekhana failed. The records remain in the void: {e}")
 
-        self.cursor.execute(sql)
-        return self.cursor.fetchall()
+    def darshana(self, table, criteria=None):
+        """
+        READ (Darshana - Vision): Observes the existing records.
+        """
+        with self._lock:
+            sql = f"SELECT * FROM {table}"
+            if criteria:
+                sql += f" WHERE {criteria}"
 
-
-def parivartana(self, table, update_dict, criteria):
-    """
-    UPDATE (Parivartana - Transformation): Amends a record when the truth changes.
-    """
-    with self._lock:
-        updates = ', '.join([f"{k} = ?" for k in update_dict.keys()])
-        sql = f"UPDATE {table} SET {updates} WHERE {criteria}"
-
-        try:
-            self.cursor.execute(sql, tuple(update_dict.values()))
-            self.connection.commit()
-            print("The record has been transformed as per the new truth.")
-        except Exception as e:
-            print(f"Error during Parivartana: {e}")
-
-
-def vilaya(self, table, criteria):
-    """
-    DELETE (Vilaya - Dissolution): Removes a record from the active ledger.
-    """
-    with self._lock:
-        sql = f"DELETE FROM {table} WHERE {criteria}"
-        try:
             self.cursor.execute(sql)
-            self.connection.commit()
-            print("The entry has returned to the void (dissolved).")
-        except Exception as e:
-            print(f"Error during Vilaya: {e}")
+            return self.cursor.fetchall()
 
+    def parivartana(self, table, update_dict, criteria):
+        """
+        UPDATE (Parivartana - Transformation): Amends a record when the truth changes.
+        """
+        with self._lock:
+            updates = ', '.join([f"{k} = ?" for k in update_dict.keys()])
+            sql = f"UPDATE {table} SET {updates} WHERE {criteria}"
 
-def visarjana(self):
-    """
-    CLOSE (Visarjana - Formal Departure): Safely closes the ledger.
-    """
-    self.connection.close()
-    print("The Kalam (pen) is rested. The ledger is sealed.")
+            try:
+                self.cursor.execute(sql, tuple(update_dict.values()))
+                self.connection.commit()
+                print("The record has been transformed as per the new truth.")
+            except Exception as e:
+                print(f"Error during Parivartana: {e}")
+
+    def vilaya(self, table, criteria):
+        """
+        DELETE (Vilaya - Dissolution): Removes a record from the active ledger.
+        """
+        with self._lock:
+            sql = f"DELETE FROM {table} WHERE {criteria}"
+            try:
+                self.cursor.execute(sql)
+                self.connection.commit()
+                print("The entry has returned to the void (dissolved).")
+            except Exception as e:
+                print(f"Error during Vilaya: {e}")
+
+    def visarjana(self):
+        """
+        CLOSE (Visarjana - Formal Departure): Safely closes the ledger.
+        """
+        self.connection.close()
+        print("The Kalam (pen) is rested. The ledger is sealed.")

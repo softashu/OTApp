@@ -179,12 +179,15 @@ class TradeMunshi():
     def save_position_order_snapshot(self, position_order_map_data):
         try:
             self.persist_as_json(position_order_map_data)
-            self._logger_.info(F"Json persisted for the positions {position_order_map_data}")
+            self._logger_.info(
+                f"Json persisted for the positions : \n{json.dumps(position_order_map_data, indent=4)} \n"
+                " Persisting in Sqlite .....")
             # We also persist in Sqlite
             self.persist_position_in_sqlite(position_order_map_data)
+            self._logger_.info(f"Persisted in Sqlite : \n{json.dumps(position_order_map_data, indent=4)} \n")
         except Exception as e:
             self._logger_.error(
-                f"🚨 CRITICAL ERROR: Position - Order  snapshot failed! | "
+                f"🚨 CRITICAL ERROR: Position - Order  snapshot failed! | with data : \n{json.dumps(position_order_map_data, indent=4)} \n"
             )
 
     def persist_as_json(self, position_order_map_data):

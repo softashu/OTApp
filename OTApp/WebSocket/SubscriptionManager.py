@@ -15,7 +15,7 @@ class SubscriptionManager():
         if public:
             try:
                 # Convert list to tuple (hashable)
-                symbols_key = tuple(symbols) if isinstance(symbols, list) else symbols
+                symbols_key = tuple(symbols)
                 if symbols_key not in self.subscribed_symbols:
                     self.public_channel_subscription(channel, symbols)
                     self.subscribed_symbols.add(symbols_key)
@@ -99,7 +99,7 @@ class SubscriptionManager():
         if public:
             try:
                 # Convert list to tuple (hashable)
-                symbols_key = tuple(symbols) if isinstance(symbols, list) else symbols
+                symbols_key = tuple(symbols)
                 if symbols_key in self.subscribed_symbols:
                     self.public_channel_un_subscription(channel, symbols)
                     self.subscribed_symbols.remove(symbols_key)
