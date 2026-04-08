@@ -34,6 +34,7 @@ class Chitragupt:
     """
     _instance = None  # The singular presence
     _lock = threading.Lock()  # The divine barrier to ensure order
+    _thread_local = threading.local()  # The key to multi-threaded SQLite
 
     def __new__(cls, *args, **kwargs):
         # Double-checked locking for efficiency and absolute safety
@@ -59,34 +60,50 @@ class Chitragupt:
             if not self._initialized:
                 self.db_path = db_path
                 self._logger_ = logger if logger else AppLogger().get_log()
-                self.conn = None
-                self.cursor = None
+                # self.conn = None
+                # self.cursor = None
                 self._init_database()
                 self._initialized = True
 
     def _init_database(self):
         # Connect to the database (The 'Sannidhi' or Presence)
-        self.conn = sqlite3.connect(self.db_path)
-        self.conn.row_factory = sqlite3.Row
-        self.cursor = self.conn.cursor()
+        # self.conn = sqlite3.connect(self.db_path)
+        # self.conn.row_factory = sqlite3.Row
+        # self.cursor = self.conn.cursor()
         # Create universal_trade_ledger.db table
         # Automatically manifest the ledger on startup
         self.sthapana()
 
+    @property
+    def connection(self):
+        """The 'Sannidhi': Returns a connection unique to the calling thread."""
+        if not hasattr(self._thread_local, "conn"):
+            # Each thread (e.g., 7256 or 27480) creates its own local connection
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            self._thread_local.conn = conn
+        return self._thread_local.conn
+
+    @property
+    def cursor(self):
+        """Returns a cursor unique to the calling thread."""
+        return self.connection.cursor()
+
     def sthapana(self):
         """Manifests the tables defined in Agrasandhani."""
+        # Use local variables here to avoid thread contamination
+        conn = self.connection
+        cursor = conn.cursor()
         try:
             for schema in TABLES:
-                self.cursor.execute(schema['sql'])
+                cursor.execute(schema['sql'])
                 for index_sql in schema.get('indices', []):
-                    self.cursor.execute(index_sql)
-            self.conn.commit()
+                    cursor.execute(index_sql)
+            conn.commit()
             self._logger_.info("🔱 Agrasandhani has been inscribed into the database.")
         except Exception as e:
-            self.conn.rollback()
+            conn.rollback()
             self._logger_.error(f"Error during Sthapana: {e}")
-
-        self._logger_.info(f"Chitragupt has opened the ledger at: {self.db_path}")
 
     def position_lekhana(self, position_order_map_record):
         """
@@ -133,15 +150,18 @@ class Chitragupt:
 
                 data_to_inscribe.append((p_id, o_id, strategy_name, symbol,
                                          side_val, is_filled_val, t_data, now))
+        # IMPORTANT: Use the local connection and cursor
+        conn = self.connection
+        cur = conn.cursor()
 
         with self._lock:
             # executemany is the high-performance way to write multiple entries
             try:
-                self.cursor.executemany(sql, data_to_inscribe)
-                self.conn.commit()
+                cur.executemany(sql, data_to_inscribe)
+                conn.commit()
                 self._logger_.info(f"🔱 {len(data_to_inscribe)} records have been inscribed/updated in the ledger.")
             except Exception as e:
-                self.conn.rollback()
+                conn.rollback()
                 self._logger_.error(f"❌ Lekhana failed. The records remain in the void: {e}")
 
     def darshana(self, table, criteria=None):
@@ -166,7 +186,7 @@ class Chitragupt:
 
             try:
                 self.cursor.execute(sql, tuple(update_dict.values()))
-                self.conn.commit()
+                self.connection.commit()
                 print("The record has been transformed as per the new truth.")
             except Exception as e:
                 print(f"Error during Parivartana: {e}")
@@ -179,7 +199,7 @@ class Chitragupt:
             sql = f"DELETE FROM {table} WHERE {criteria}"
             try:
                 self.cursor.execute(sql)
-                self.conn.commit()
+                self.connection.commit()
                 print("The entry has returned to the void (dissolved).")
             except Exception as e:
                 print(f"Error during Vilaya: {e}")
@@ -188,5 +208,5 @@ class Chitragupt:
         """
         CLOSE (Visarjana - Formal Departure): Safely closes the ledger.
         """
-        self.conn.close()
+        self.connection.close()
         print("The Kalam (pen) is rested. The ledger is sealed.")
