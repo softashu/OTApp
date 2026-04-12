@@ -1,4 +1,5 @@
 import json
+from collections import defaultdict
 
 from websocket import WebSocketApp
 
@@ -10,6 +11,7 @@ class SubscriptionManager():
         self.pub_ws = pub_ws
         self.private_ws = private_ws
         self.subscribed_symbols = set()
+        self.subscribed_map = defaultdict(lambda: {"public_subs": set(), "private_subs": set()})
 
     def subscribe_feeds(self, channel: str, symbols: list, public: bool = False) -> None:
         if public:
@@ -19,6 +21,7 @@ class SubscriptionManager():
                 if symbols_key not in self.subscribed_symbols:
                     self.public_channel_subscription(channel, symbols)
                     self.subscribed_symbols.add(symbols_key)
+                    self.subscribed_map[symbols_key]["public_subs"].add(channel)
                     self.logger.info(f"Subscribed for {channel} channel and symbols {symbols}")
             except Exception as e:
                 self.logger.error(f"failed to subscribe to {channel} channel and symbols {symbols} with error : {e}")
@@ -83,7 +86,7 @@ class SubscriptionManager():
                     }
                 }
             self.private_ws.send(json.dumps(sub_msg))
-            self.logger.info(f"📝 UN_SUB_SENT: Channel '{channel}' with symbols '{symbols}' is done successfully.")
+            self.logger.info(f"📝 SUB_SENT: Channel '{channel}' with symbols '{symbols}' is done successfully.")
         except Exception as e:
             self.logger.critical(
                 f"\n{'=' * 40}\n"
@@ -103,6 +106,7 @@ class SubscriptionManager():
                 if symbols_key in self.subscribed_symbols:
                     self.public_channel_un_subscription(channel, symbols)
                     self.subscribed_symbols.remove(symbols_key)
+                    self.subscribed_map[symbols_key]["public_subs"].remove(channel)
                     self.logger.info(f"Un-Subscribed for {channel} channel and symbols {symbols}")
             except Exception as e:
                 self.logger.error(

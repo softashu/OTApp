@@ -1,11 +1,10 @@
 # ============================================================================
 # DATA CLASSES
 # ============================================================================
-import threading
 import time
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import Optional, List, Dict
+from typing import Optional, List, Any
 
 from OTApp.Configuration.Enums import OrderSide, StrategyState
 
@@ -18,12 +17,12 @@ class FilledOrderResult:
     symbol: Optional[str] = None
     side: Optional[OrderSide] = None
     fill_size: int = 0
-    fill_id = None
+    fill_id: Optional[str] = None
     reason: Optional[str] = None
     fill_price: Optional[float] = None
     position_size: Optional[float] = None
     fill_at: Optional[float] = None
-    data: Dict = None
+    data: dict = field(default_factory=dict)  # Use factory
 
 
 @dataclass
@@ -40,9 +39,9 @@ class OrderResult:
     average_fill_price: Optional[str] = None
     error: Optional[str] = None
     filled_orders: List[FilledOrderResult] = field(default_factory=list)
-    data = None
-    created_at: float = time.time()  # Timestamp in seconds
-    popcorn: threading.Timer = None
+    data: dict = field(default_factory=dict)
+    created_at: float = field(default_factory=time.time)  # Timestamp in seconds
+    popcorn: Any = None  # This will be skipped in JSON later
 
 
 @dataclass
@@ -51,7 +50,7 @@ class PositionData:
     side: OrderSide = OrderSide.BUY
     product_id: int = 0
     # Optional fields with defaults
-    strategy_name: str = None
+    strategy_name: Optional[str] = None
     size: int = 0
     entry_price: Optional[float] = None
     margin: Optional[Decimal] = None
@@ -62,7 +61,7 @@ class PositionData:
     unrealized_pnl: Optional[float] = None
     current_price: Optional[float] = None
     orders: List[OrderResult] = field(default_factory=list)
-    data = None  # row position data
+    data: dict = field(default_factory=dict)  # row position data
 
 
 @dataclass

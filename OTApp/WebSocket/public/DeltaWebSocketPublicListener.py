@@ -2,7 +2,6 @@ import json
 import time
 
 import websocket  # pip install websocket-client
-from Tools.scripts.nm2def import symbols
 
 from OTApp.Monitors.Order.OrderChaukidar import BahaduarDass
 from OTApp.Monitors.Position.Jeri import Jeri
@@ -17,6 +16,7 @@ class DeltaWebSocketPublicListener:
 
     def __init__(self, public_announcement_monitor_class: PublicAnnouncement, order_monitor: BahaduarDass,
                  position_monitor: Jeri, logger=None):
+        self.connection_error: bool = False
         self.public_announcement_monitor = public_announcement_monitor_class  # The PublicAnnouncement instance
         self.order_monitor = order_monitor
         self.position_monitor = position_monitor
@@ -51,6 +51,11 @@ class DeltaWebSocketPublicListener:
         self.subscribe(ws, channel="product_updates", symbols=None)
         # bitcoin mark price update
         # self.subscribe(ws, channel="mark_price", symbols=['MARK:BTCUSD'])
+
+        # we need to re-subscribe the all subscribed feed before connection has disconnected
+        if self.connection_error:
+            self.handle_lost_subscription()
+            self.connection_error = False
 
     def on_message(self, ws, message):
         try:
@@ -103,10 +108,12 @@ class DeltaWebSocketPublicListener:
     def on_error(self, ws, error):
         """Handles connection and protocol errors."""
         self._logger_.error(f"🛠️ WS_PUB_CLOSED: Connection encountered an issue | {error}")
+        self.connection_error = True
 
     def on_close(self, ws, close_status_code, close_msg):
         """Handles connection closure."""
         self._logger_.warning(f"🔌 WS_PUB_CLOSED: Connection lost | Code: {close_status_code} | Msg: {close_msg}")
+        self.connection_error = True
 
     def run_sentinel(self):
         """
@@ -121,7 +128,6 @@ class DeltaWebSocketPublicListener:
         )
         # initializing public ws variable to order and position manager
         self.order_monitor.subscriber_manager.pub_ws = self.ws
-
         # 🔱 GUARD: Automatic reconnection logic
         # ping_interval/timeout keeps the connection alive via heartbeats
         self.ws.run_forever(
@@ -161,3 +167,10 @@ class DeltaWebSocketPublicListener:
         except Exception as e:
             self._logger_.error(
                 f"Public announcement subscription fail with {e} for channel : {channel} and symbols : {symbols}")
+
+    def handle_lost_subscription(self):
+        self._logger_.info(f"Re-Subscribing the feed that has lost subscription....")
+        for symbol, sub_type in self.order_monitor.subscriber_manager.subscribed_map.items():
+            for pub_sub in sub_type["public_subs"]:
+                self.order_monitor.subscriber_manager.public_channel_subscription(channel=pub_sub, symbols=[symbol])
+                self._logger_.info(f"Re-Subscribed  feed {pub_sub} for {symbol}")

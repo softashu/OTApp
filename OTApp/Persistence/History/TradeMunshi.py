@@ -3,10 +3,14 @@ import json
 import os
 import queue
 import threading
+from dataclasses import asdict
 from datetime import datetime
 import time
+from decimal import Decimal
+from enum import Enum
 
 from queue import Empty
+from typing import Any
 
 from OTApp.Logger.Logger import AppLogger
 from OTApp.Persistence.sqlite.SqliteManager import Chitragupt
@@ -59,6 +63,8 @@ class TradeMunshi():
         Background Task: Dedicated to saving data with retry logic.
         """
         while True:
+            # Wait for 5 minutes (300 seconds) before the next iteration
+            time.sleep(300)
             try:
                 self.process_market_analysis()
             except Exception as e:
@@ -215,7 +221,8 @@ class TradeMunshi():
 
         # 3. Save with pretty-printing
         with open(filename, 'w', encoding='utf-8') as f:
-            json.dump(position_order_map_data, f, indent=4, default=str)  # default=str handles datetime objects
+            json.dump(position_order_map_data, f, indent=4,
+                      default=self.json_serializer)  # default=str handles datetime objects
             f.flush()  # Pushes data from Python to the OS
             os.fsync(f.fileno())  # Pushes data from the OS to the actual disk
 
@@ -235,3 +242,17 @@ class TradeMunshi():
         except Exception as e:
             self._logger_.error(
                 f"{self.__class__.__name__}'{inspect.currentframe().f_code.co_name} persisted position order map failed with {str(e)}")
+
+    def json_serializer(self, obj: Any):
+        # Handle Enums (convert OrderSide.SELL -> "sell")
+        if isinstance(obj, Enum):
+            return obj.value
+        if isinstance(obj, Decimal):
+            return float(obj)
+        if isinstance(obj, threading.Timer):
+            return "TimerObject"  # JSON can't save active timers
+        # Handle Dataclasses (convert PositionData -> dict)
+        if hasattr(obj, "__dataclass_fields__"):
+            return asdict(obj)
+        # Fallback for datetimes or other types
+        return str(obj)

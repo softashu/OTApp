@@ -146,7 +146,7 @@ class Chitragupt:
 
                 # 3. Serialize the Whole Being (JSON)
                 # This captures all nested orders and filled_orders in one blob.
-                t_data = json.dumps(pos_obj.data, cls=PositionDataEncoder)
+                t_data = json.dumps(pos_obj, cls=PositionDataEncoder)
 
                 data_to_inscribe.append((p_id, o_id, strategy_name, symbol,
                                          side_val, is_filled_val, t_data, now))
