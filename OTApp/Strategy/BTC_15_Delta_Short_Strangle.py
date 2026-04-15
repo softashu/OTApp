@@ -122,11 +122,7 @@ class BTC_15_Delta_Strangle:
                                 trade_record['execution_history'] = place_trade_resp
                                 # Save all market analysis data for later use
                                 # TradeMunshi().save_trade_snapshot(trade_record)
-                                TradeMunshi(self._logger_).save_trade_snapshot_thread_support(trade_record)
-                                # Invoke trade fill monitoring we called it Nigrani
-
-                                # OrderFillChaukidar().order_nigrani(trade_record)
-                                # start trade
+                                TradeMunshi(self._loger_).save_trade_snapshot_thread_support(trade_record)
                                 break
                             else:
                                 self._loger_.error(
