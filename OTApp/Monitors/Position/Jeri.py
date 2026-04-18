@@ -39,11 +39,11 @@ class Jeri():
         self._logger_ = AppLogger().get_log()
         self._active_order_lock_ = threading.Lock()
         # The memory of the system: holding the fill data
-        self.order_queue = queue.Queue()
+        self.position_queue = queue.Queue()
         self._positions_: dict[str, dict[str, PositionData]] = defaultdict(dict)
 
     def report_jeri_for_positions(self, position_data):
         action = position_data.get('action')
         symbol = position_data.get('product_symbol')
         self._logger_.info(f"Jeri received {action} position for {symbol} with data : {position_data}")
-        self.order_queue.put(position_data)
+        self.position_queue.put(position_data)

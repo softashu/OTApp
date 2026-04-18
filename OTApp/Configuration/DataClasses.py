@@ -26,6 +26,17 @@ class FilledOrderResult:
 
 
 @dataclass
+class ConditionalOrderDetails:
+    """Details for associated SL or TP orders"""
+    order_id: Optional[int] = None
+    trigger_price: Optional[str] = None
+    limit_price: Optional[str] = None  # Optional: for stop-limit orders
+    order_type: str = "stop_market"  # stop_market or take_profit_market
+    state: str = "pending"  # pending, placed, triggered, cancelled
+    size: int = 0
+
+
+@dataclass
 class OrderResult:
     strategy_name: str = None
     success: bool = False
@@ -42,6 +53,9 @@ class OrderResult:
     data: dict = field(default_factory=dict)
     created_at: float = field(default_factory=time.time)  # Timestamp in seconds
     popcorn: Any = None  # This will be skipped in JSON later
+    # New SL and TP associations
+    stop_loss: Optional[ConditionalOrderDetails] = None
+    take_profit: Optional[ConditionalOrderDetails] = None
 
 
 @dataclass

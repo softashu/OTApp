@@ -44,6 +44,7 @@ class BahaduarDass():
         self._order_position_lock_ = threading.Lock()
         # The memory of the system: holding the fill data
         self.order_queue = queue.Queue()
+        self.filled_order_queue = queue.Queue()
         self._yet_filled_: dict[str, dict[str, OrderResult]] = defaultdict(dict)
         self._filled: dict[str, dict[str, OrderResult]] = defaultdict(dict)
         self._positions: dict[str, dict[str, PositionData]] = defaultdict(dict)
@@ -59,6 +60,8 @@ class BahaduarDass():
         self.WAIT_TIME = 60  # we will wait to fill order after that we have to make changes to make it fill
         self.subscriber_manager = SubscriptionManager(self._logger_)
         self.trade_munshi = TradeMunshi(self._logger_)
+        self.fill_order_processing_done = threading.Event()
+        self.fill_order_processing_done.set()
 
     def report_bahadur_dass(self, order_data):
         """ The sense: instantly catching the market event """
@@ -117,8 +120,18 @@ class BahaduarDass():
         elif action in {'create', 'update'}:
             self.handle_order_data(order_data)
         elif action is None and order_data.get('type') == 'v2/user_trades':
-            self._logger_.info(f"Order with id = {order_data.get('o')} has been filled ")
-            self.handle_order_fill_data(order_data)
+            try:
+                # Locking processing of position
+                self.fill_order_processing_done.clear()
+                self._logger_.info(f"Order with id = {order_data.get('o')} has been filled ")
+                self.handle_order_fill_data(order_data)
+            except Exception as e:
+                self._logger_.error(
+                    f"Error happened while processing of v2/user_trades with Id:  {order_data.get('o')}")
+            finally:
+                # Unlocking to start processioning of position handling.
+                self._logger_.info(f"Releasing lock for position processing ...")
+                self.fill_order_processing_done.set()
         else:
             self._logger_.critical(f"Getting unhandled order data {order_data}")
         return order_data
@@ -167,9 +180,9 @@ class BahaduarDass():
                     self._yet_filled_[strategy_name].pop(order_data.get('product_id'), None)
             elif order_state in {'create', 'update', 'open'}:
                 with self._active_order_lock_:
-                    #  Comment out as we are already using continuous loop for handle all pending order
-                    #  that help to reduce threads for every pending orders
-                    # order_data_class.popcorn = threading.Timer(self.WAIT_TIME, lambda: self._vigilant_pending_orders())
+                    # TODO : We have to handle SL and TP orders that means association of SL and TP order with the parent order
+                    # how to get order belongs to SL and TP ?
+                    # find the parrent order and associate with it?
                     self._yet_filled_[strategy_name][order_data.get('product_id')] = order_data_class
         except Exception as e:
             self._logger_.error(f"Error {e} occurred while handling of order_data :  {order_data}")
@@ -236,6 +249,8 @@ class BahaduarDass():
             self._logger_.error(f"Error in act_on_stale_orders: {e}")
 
     def report_bahadur_dass_for_position(self, position_data):
+        # This blocks the thread until set() is called
+        self.fill_order_processing_done.wait()
         action = position_data.get('action')
         self._logger_.info(f"Bahadur das received {action} position : {position_data}")
         if action == 'snapshot' and 'result' in position_data and position_data['result']:
@@ -332,6 +347,8 @@ class BahaduarDass():
                     order_validation = order_data.order_id == filled_order.order_id
                     size_validation = order_data.size == int(filled_order.fill_size)
                     if order_validation:
+                        self._logger_.info(
+                            f"Appending filled order {filled_order.order_id} to existing order {order_data.order_id}")
                         order_data.filled_orders.append(filled_order)
                         order_data.unfilled_size = order_data.unfilled_size - int(filled_order.fill_size)
                         order_data_cls = order_data

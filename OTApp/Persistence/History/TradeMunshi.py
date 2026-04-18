@@ -64,7 +64,7 @@ class TradeMunshi():
         """
         while True:
             # Wait for 5 minutes (300 seconds) before the next iteration
-            time.sleep(300)
+            time.sleep(30)
             try:
                 self.process_market_analysis()
             except Exception as e:
