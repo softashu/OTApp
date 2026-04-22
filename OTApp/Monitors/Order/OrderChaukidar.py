@@ -4,7 +4,7 @@ import time
 from collections import defaultdict
 from typing import Any
 
-from OTApp.Configuration.DataClasses import OrderResult, PositionData, FilledOrderResult
+from OTApp.Configuration.DataClasses import OrderResult, PositionData, FilledOrderResult, ConditionalOrderDetails
 from OTApp.Configuration.Enums import OrderSide
 from OTApp.Logger.Logger import AppLogger
 from OTApp.Persistence.History.TradeMunshi import TradeMunshi
@@ -156,9 +156,6 @@ class BahaduarDass():
                     self._yet_filled_[strategy_name].pop(order_data_result.get('product_id'), None)
             elif order_state in {'create', 'update', 'open'}:
                 with self._active_order_lock_:
-                    #  Comment out as we are already using continuous loop for handle all pending order
-                    #  that help to reduce threads for every pending orders
-                    # order_data_class.popcorn = threading.Timer(self.WAIT_TIME, lambda: self._vigilant_pending_orders())
                     self._yet_filled_[strategy_name][order_data_result.get('product_id')] = order_data_class
 
     def handle_order_data(self, order_data):
@@ -180,9 +177,6 @@ class BahaduarDass():
                     self._yet_filled_[strategy_name].pop(order_data.get('product_id'), None)
             elif order_state in {'create', 'update', 'open'}:
                 with self._active_order_lock_:
-                    # TODO : We have to handle SL and TP orders that means association of SL and TP order with the parent order
-                    # how to get order belongs to SL and TP ?
-                    # find the parrent order and associate with it?
                     self._yet_filled_[strategy_name][order_data.get('product_id')] = order_data_class
         except Exception as e:
             self._logger_.error(f"Error {e} occurred while handling of order_data :  {order_data}")
@@ -229,6 +223,18 @@ class BahaduarDass():
         order_data_cls.average_fill_price = order_result.get('avg_fill_price')
         order_data_cls.state = order_result.get('state')
         order_data_cls.unfilled_size = order_result.get('unfilled_size')
+        # adding blank SL and TP for future use of bracket order
+        order_data_cls.stop_loss = ConditionalOrderDetails()
+        order_data_cls.take_profit = ConditionalOrderDetails()
+        # # "bracket_order": true,
+        # if order_result.get('bracket_order'):
+        sl = order_data_cls.stop_loss
+        sl.trigger_price = order_result.get('bracket_stop_loss_price')
+        sl.limit_price = order_result.get('bracket_stop_loss_limit_price')
+        tp = order_data_cls.take_profit
+        tp.trigger_price = order_result.get('bracket_take_profit_price')
+        tp.limit_price = order_result.get('bracket_take_profit_limit_price')
+
         order_data_cls.data = order_result
 
         return order_data_cls
