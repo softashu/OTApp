@@ -308,12 +308,13 @@ class BahaduarDass():
                     self.handle_delete_order(order_data=order_data.data, unsubscribe=True)
             elif len(self._positions) == 0:
                 # Order does not present in memory check in database
-                memory_position_data: PositionData = self.trade_munshi.search_position_history(
+                db_position_data: PositionData = self.trade_munshi.search_position_history(
                     position_id=position_data.position_id)
                 # re-setting memory
-                strategy_name = position_data.strategy_name if position_data.strategy_name else f"{position_data.symbol}_strategy"
+                strategy_name = db_position_data.strategy_name
+
                 self._positions[strategy_name].update({
-                    position_data.symbol: position_data
+                    position_data.symbol: db_position_data
                 })
 
             else:
@@ -333,8 +334,8 @@ class BahaduarDass():
         position_data_cls.symbol = position_data_result.get('product_symbol')
         position_data_cls.position_id = f"{position_data_cls.product_id}_{position_data_result.get('user_id')}"
         position_data_cls.side = OrderSide.SELL if position_data_cls.size < 0 else OrderSide.BUY
-        position_data_cls.entry_price = position_data_result.get('price')
-        position_data_cls.data = position_data_result.get('entry_price')
+        position_data_cls.entry_price = position_data_result.get('entry_price')
+        position_data_cls.data = position_data_result
         return position_data_cls
 
     def find_out_order_data_for_position(self, position_data):
