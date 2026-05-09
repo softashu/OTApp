@@ -7,6 +7,7 @@ from typing import Any
 from OTApp.Configuration.DataClasses import OrderResult, PositionData, FilledOrderResult, ConditionalOrderDetails
 from OTApp.Configuration.Enums import OrderSide
 from OTApp.Logger.Logger import AppLogger
+from OTApp.Order.OrderManager import OrderManager
 from OTApp.Persistence.History.TradeMunshi import TradeMunshi
 from OTApp.WebSocket.SubscriptionManager import SubscriptionManager
 
@@ -175,9 +176,21 @@ class BahaduarDass():
                 # Removing safely from created data structure
                 with self._active_order_lock_:
                     self._yet_filled_[strategy_name].pop(order_data.get('product_id'), None)
-            elif order_state in {'create', 'update', 'open'}:
+            elif order_state in {'create', 'update', 'open', 'pending'}:
                 with self._active_order_lock_:
                     self._yet_filled_[strategy_name][order_data.get('product_id')] = order_data_class
+                    if order_state not in {'pending'}:
+                        OrderManager(self._logger_).adjust_brackets(order_data, order_data_class)
+                    elif order_state == 'pending':
+                        # TODO :
+                        # update associated position for SL and TP details
+                        # Update conditional ids
+                        # Clean the Order / Position map
+                        if order_data.get('stop_order_type') == 'take_profit_order':
+                            self.adjust_position_bracket(order_data, tp=True)
+
+            else:
+                self._logger_.critical(f"Getting unhandled order :  {order_data}")
         except Exception as e:
             self._logger_.error(f"Error {e} occurred while handling of order_data :  {order_data}")
 
@@ -221,13 +234,13 @@ class BahaduarDass():
         order_data_cls.error = order_result.get('error_msg')
         order_data_cls.size = order_result.get('size')
         order_data_cls.average_fill_price = order_result.get('avg_fill_price')
+        order_data_cls.limit_price = order_result.get('limit_price')
+        order_data_cls.order_type = order_result.get('order_type')
         order_data_cls.state = order_result.get('state')
         order_data_cls.unfilled_size = order_result.get('unfilled_size')
         # adding blank SL and TP for future use of bracket order
         order_data_cls.stop_loss = ConditionalOrderDetails()
         order_data_cls.take_profit = ConditionalOrderDetails()
-        # # "bracket_order": true,
-        # if order_result.get('bracket_order'):
         sl = order_data_cls.stop_loss
         sl.trigger_price = order_result.get('bracket_stop_loss_price')
         sl.limit_price = order_result.get('bracket_stop_loss_limit_price')
@@ -288,12 +301,27 @@ class BahaduarDass():
                     self._positions[strategy_name].update({
                         position_data.symbol: position_data
                     })
+                    position_data.strategy_name = strategy_name
                     # add position order map to trade munshi position_order_queue for persist
                     self.trade_munshi.save_position_snapshot(self._positions)
                     # delete order from self._yet_filled_ dictionary but unsubscribe as we need feed for position tracking
                     self.handle_delete_order(order_data=order_data.data, unsubscribe=True)
+            elif len(self._positions) == 0:
+                # Order does not present in memory check in database
+                memory_position_data: PositionData = self.trade_munshi.search_position_history(
+                    position_id=position_data.position_id)
+                # re-setting memory
+                strategy_name = position_data.strategy_name if position_data.strategy_name else f"{position_data.symbol}_strategy"
+                self._positions[strategy_name].update({
+                    position_data.symbol: position_data
+                })
+
             else:
-                self._logger_.info(f"No ! order data found for {position_data} /n/t escaping position handling ...")
+                # Is position presents in memory?
+                self._logger_.info(
+                    f"No ! order data found for {position_data}"
+                    f" \n\t\t\t\t\t\t\t "
+                    f"*** Escaping Position handling ***!")
         except Exception as e:
             self._logger_.error(
                 f"Bahadur das having error while handle_position {position_data_result} and error is : {e}")
@@ -305,12 +333,14 @@ class BahaduarDass():
         position_data_cls.symbol = position_data_result.get('product_symbol')
         position_data_cls.position_id = f"{position_data_cls.product_id}_{position_data_result.get('user_id')}"
         position_data_cls.side = OrderSide.SELL if position_data_cls.size < 0 else OrderSide.BUY
-        position_data_cls.data = position_data_result
+        position_data_cls.entry_price = position_data_result.get('price')
+        position_data_cls.data = position_data_result.get('entry_price')
         return position_data_cls
 
     def find_out_order_data_for_position(self, position_data):
         order_data_cls: OrderResult = None
         with self._active_order_lock_:
+            # TODO : why we are searching in _yet_filled list it should be _filled list
             for strategy in self._yet_filled_.keys():
                 for order_data in self._yet_filled_[strategy].values():
                     symbol_validation = order_data.symbol == position_data.symbol
@@ -321,6 +351,8 @@ class BahaduarDass():
                         order_data_cls = order_data
                         position_data.strategy_name = order_data.strategy_name
                         position_data.orders.append(order_data_cls)
+                        position_data.stop_loss = order_data.stop_loss
+                        position_data.take_profit = order_data.take_profit
                         break
         return order_data_cls
 
@@ -331,7 +363,6 @@ class BahaduarDass():
         position_data: PositionData = self.prepare_position_data_class(row_position_data)
         order_data: OrderResult = self.find_out_order_data_for_position(position_data)
         symbol = position_data.symbol
-        strategy_name = position_data.strategy_name
         with self._order_position_lock_:
             # Unsubscribe feed symbols
             self.subscriber_manager.unsubscribe_feeds(symbols=[symbol], channel='l2_orderbook', public=True)
@@ -354,7 +385,8 @@ class BahaduarDass():
                     size_validation = order_data.size == int(filled_order.fill_size)
                     if order_validation:
                         self._logger_.info(
-                            f"Appending filled order {filled_order.order_id} to existing order {order_data.order_id}")
+                            f"Appending filled order with id {filled_order.fill_id} \n\t\t\t\t\t\t\t "
+                            f" of Order  {filled_order.order_id} to existing order {order_data.order_id}")
                         order_data.filled_orders.append(filled_order)
                         order_data.unfilled_size = order_data.unfilled_size - int(filled_order.fill_size)
                         order_data_cls = order_data
@@ -383,3 +415,75 @@ class BahaduarDass():
         filled_order.fill_price = filled_order_data.get('p')
         filled_order.data = filled_order_data
         return filled_order
+
+    def adjust_position_bracket(self, order_data, tp: bool = False, sl: bool = False):
+        parent_id = order_data.get('meta_data').get('parent_id')
+        symbol = order_data.get('product_symbol')
+        strategy_name = order_data.get('client_order_id') if order_data.get(
+            'client_order_id') else f"{symbol}_strategy"
+        searched_position: PositionData | None = self.find_position(symbol=symbol, strategy_name=strategy_name,
+                                                                    parent_id=parent_id)
+        if tp:
+            searched_position.take_profit.conditional_order_id = order_data.get('id')
+            searched_position.take_profit.trigger_price = order_data.get('stop_price')
+            searched_position.take_profit.limit_price = order_data.get('limit_price')
+        elif sl:
+            searched_position.stop_loss.conditional_order_id = order_data.get('id')
+            searched_position.stop_loss.trigger_price = order_data.get('stop_price')
+            searched_position.stop_loss.limit_price = order_data.get('limit_price')
+
+    def find_position(self, symbol, strategy_name=None, parent_id=None):
+        """
+        Finds a position based on symbol and optionally strategy_name or parent_id.
+        """
+        # Scenario 1: strategy_name is provided (Efficient lookup)
+        if strategy_name and strategy_name in self._positions:
+            strategy_positions = self._positions[strategy_name]
+            if symbol in strategy_positions:
+                pos: PositionData = strategy_positions[symbol]
+                # If parent_id is also provided, verify it matches
+                if parent_id:
+                    # Assuming PositionData has a parent_id attribute or key
+                    # able to matched
+                    if self.same_position(position_id=pos.position_id, parent_id=parent_id):
+                        return pos
+                else:
+                    return pos
+            return None
+        # Scenario 2: strategy_name is NOT provided (Iterate through all strategies)
+        for strat_name, symbols_dict in self._positions.items():
+            if symbol in symbols_dict:
+                pos = symbols_dict[symbol]
+                # If parent_id is provided, check for a specific match
+                # able to matched
+                if parent_id:
+                    if self.same_position(position_id=pos.position_id, parent_id=parent_id):
+                        return pos
+                else:
+                    # If no parent_id provided, return the first match for this symbol
+                    return pos
+        return None
+
+    def same_position(self, parent_id: str, position_id: str | None) -> bool:
+        """
+        Validates if a parent_id and position_id refer to the same entity.
+
+        Args:
+            parent_id: e.g., '73986761_BTCUSD'
+            position_id: e.g., '27_73986761'
+            symbol: The symbol string (e.g., 'BTCUSD')
+            product_id: The numeric ID for the product (e.g., 27)
+        """
+        try:
+            # 1. Extract Order ID from parent_id (Format: {order_id}_{symbol})
+            # We split by underscore and take the first part
+            order_id_from_parent = parent_id.split('_')[0]
+
+            # 2. Extract Order ID from position_id (Format: {product_id}_{order_id})
+            # We split by underscore and take the second part
+            order_id_from_pos = position_id.split('_')[1]
+
+            # 3. Compare the extracted Order IDs
+            return order_id_from_parent == order_id_from_pos
+        except Exception:
+            return False

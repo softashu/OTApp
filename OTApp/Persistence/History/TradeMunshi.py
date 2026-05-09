@@ -12,8 +12,12 @@ from enum import Enum
 from queue import Empty
 from typing import Any
 
+from django.core.handlers import exception
+
+from OTApp.Configuration.DataClasses import PositionData
 from OTApp.Logger.Logger import AppLogger
 from OTApp.Persistence.sqlite.SqliteManager import Chitragupt
+from OTApp.Persistence.sqlite.SearchHandler import Anveshaka
 
 """
 🔱 The "Ghost-Writer" Architecture
@@ -37,6 +41,8 @@ from OTApp.Persistence.sqlite.SqliteManager import Chitragupt
 class TradeMunshi():
     def __init__(self, logger=None):
         self._logger_ = logger if logger else AppLogger().get_log()
+        self.chitragupta_instance = Chitragupt(logger=self._logger_)
+        self.darshana = Anveshaka(chitragupt_instance=self.chitragupta_instance)
         # 1. Initialize the Thread-Safe Memory Queue
         self.trade_queue = queue.Queue()
         self.position_order_queue = queue.Queue()
@@ -235,8 +241,7 @@ class TradeMunshi():
 
     def persist_position_in_sqlite(self, position_order_map_data):
         try:
-            chitragupta_instance = Chitragupt(logger=self._logger_)
-            chitragupta_instance.position_lekhana(position_order_map_data)
+            self.chitragupta_instance.position_lekhana(position_order_map_data)
             self._logger_.info(
                 f"{self.__class__.__name__}'{inspect.currentframe().f_code.co_name} persisted position order map successfully")
         except Exception as e:
@@ -256,3 +261,10 @@ class TradeMunshi():
             return asdict(obj)
         # Fallback for datetimes or other types
         return str(obj)
+
+    def search_position_history(self, position_id):
+        try:
+            positionHistory: PositionData = self.darshana.khoj(position_id=position_id)
+            return positionHistory
+        except exception as e:
+            self._logger_.error(f"Trade Munshi search_position_history: {str(e)}")

@@ -4,6 +4,8 @@ from typing import Any
 import requests
 
 from OTApp.Configuration import DeltaExchangeConfiguration
+from OTApp.Configuration.DataClasses import OrderResult
+from OTApp.Configuration.Enums import OrderSide
 from OTApp.Logger.Logger import AppLogger
 from OTApp.Security.APIRequestSecurityManager import APIRequestSecurityManager
 
@@ -78,7 +80,9 @@ class OrderManager:
                         response_data = place_order_response_data['result']
                         self._logger_.info(
                             f"✅ ORDER ACCEPTED | ID: {response_data['id']} | {response_data['product_symbol']} \n"
+                            f"                             "  # spacing to see log properly TODO need to make one space constant
                             f"📍 Type: {response_data['stop_order_type']} | State: {response_data['state'].upper()} \n"
+                            f"                             "  # spacing to see log properly
                             f"💰 Stop Price: {response_data['stop_price']} | Trigger: {response_data['stop_trigger_method']}"
                         )
                         executed_orders.append(
@@ -194,8 +198,10 @@ class OrderManager:
             )
         else:
             self._logger_.warning(
-                f"⚠️  SL UNPROTECTED | Leg: {symbol} | "
-                f"Reason: No valid {contract_type} OB found for Strike {strike} | "
+                f"⚠️  SL UNPROTECTED | Leg: {symbol} | \n"
+                f"                                   "
+                f"Reason: No valid {contract_type} OB found for Strike {strike} | \n"
+                f"                                   "
                 f"Action: Reverting to default risk params 🔄"
             )
         return sl_price
@@ -251,4 +257,21 @@ class OrderManager:
         return round(math.floor(price / tick_size) * tick_size, 8)
 
     def nigrani_orders(self, strategy_name, orders):
-        self.orders.update({strategy_name: orders})
+        # self.orders.update({strategy_name: orders})
+        pass
+
+    def adjust_brackets(self, order_data, order_data_class: OrderResult):
+        try:
+            # TODO we need to adjust SL and TP as per order update
+            order_limit_price = order_data_class.limit_price
+            sl = order_data_class.stop_loss
+            tp = order_data_class.take_profit
+            # adjustment for sale order
+            if order_data_class.side == OrderSide.SELL:
+                if sl.trigger_price < order_limit_price:
+                    trigger_percent = sl.trigger_percentage
+            elif order_data_class.side == OrderSide.BUY:
+                if sl.trigger_price > order_limit_price:
+                    trigger_percent = sl.trigger_percentage
+        except Exception as e:
+            pass

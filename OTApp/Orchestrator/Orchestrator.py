@@ -52,7 +52,7 @@ class Orchestrator:
         scheduler = BlockingScheduler(timezone=Config.TIME_ZONE.zone)
 
         # This tells the scheduler to wake up  15_Delta strategy at 06:00 every day
-        scheduler.add_job(BTC_15_Delta_Strangle().trade_job, 'cron', hour=6, minute=57)
+        scheduler.add_job(BTC_15_Delta_Strangle().trade_job, 'cron', hour=15, minute=24)
         self._logger_.info("Scheduler active. The bot will check every minute between 06:00 and 08:15 IST daily.")
         try:
             scheduler.start()

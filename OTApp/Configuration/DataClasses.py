@@ -28,12 +28,13 @@ class FilledOrderResult:
 @dataclass
 class ConditionalOrderDetails:
     """Details for associated SL or TP orders"""
-    order_id: Optional[int] = None
-    trigger_price: Optional[str] = None
+    conditional_order_id: Optional[int] = None
+    trigger_price: Optional[float] = 0
     limit_price: Optional[str] = None  # Optional: for stop-limit orders
     order_type: str = "stop_market"  # stop_market or take_profit_market
     state: str = "pending"  # pending, placed, triggered, cancelled
     size: int = 0
+    trigger_percentage: Optional[float] = None
 
 
 @dataclass
@@ -48,6 +49,8 @@ class OrderResult:
     unfilled_size: int = 0
     state: Optional[str] = None
     average_fill_price: Optional[str] = None
+    limit_price: Optional[float] = 0
+    order_type: Optional[str] = None
     error: Optional[str] = None
     filled_orders: List[FilledOrderResult] = field(default_factory=list)
     data: dict = field(default_factory=dict)
@@ -74,6 +77,13 @@ class PositionData:
     realized_pnl: Optional[Decimal] = None
     unrealized_pnl: Optional[float] = None
     current_price: Optional[float] = None
+
+    # --- Associated Protection Orders ---
+    # These represent the ACTIVE SL/TP currently protecting this position
+    stop_loss: Optional[ConditionalOrderDetails] = None
+    take_profit: Optional[ConditionalOrderDetails] = None
+
+    # History of all orders (Entry, Additions, SL/TP attempts) related to this position
     orders: List[OrderResult] = field(default_factory=list)
     data: dict = field(default_factory=dict)  # row position data
 
