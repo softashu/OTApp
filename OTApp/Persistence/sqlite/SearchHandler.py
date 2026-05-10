@@ -1,7 +1,7 @@
 import json
 import sqlite3
 
-from OTApp.Configuration.DataClasses import PositionData
+from OTApp.Configuration.DataClasses import PositionData, ConditionalOrderDetails, OrderResult
 from OTApp.Logger.Logger import AppLogger
 from OTApp.Persistence.sqlite.SqliteManager import Chitragupt
 
@@ -38,6 +38,22 @@ class Anveshaka:
         # Create a copy or pop the metadata to avoid __init__ errors
         clean_data = position_data_json.copy()
         clean_data.pop('__type__', None)
+
+        # 2. Convert Nested Stop Loss / Take Profit
+        for key in ['stop_loss', 'take_profit']:
+            if clean_data.get(key) and isinstance(clean_data[key], dict):
+                # Pass dictionary into ConditionalOrderDetails constructor
+                clean_data[key] = ConditionalOrderDetails(**clean_data[key])
+
+        # 3. Convert Nested Orders List
+        if 'orders' in clean_data and isinstance(clean_data['orders'], list):
+            resurrected_orders = []
+            for o in clean_data['orders']:
+                if isinstance(o, dict):
+                    resurrected_orders.append(OrderResult(**o))
+                else:
+                    resurrected_orders.append(o)
+            clean_data['orders'] = resurrected_orders
 
         # 3. Instantiation
         try:

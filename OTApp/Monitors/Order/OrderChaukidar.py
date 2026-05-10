@@ -306,23 +306,35 @@ class BahaduarDass():
                     self.trade_munshi.save_position_snapshot(self._positions)
                     # delete order from self._yet_filled_ dictionary but unsubscribe as we need feed for position tracking
                     self.handle_delete_order(order_data=order_data.data, unsubscribe=True)
-            elif len(self._positions) == 0:
-                # Order does not present in memory check in database
-                db_position_data: PositionData = self.trade_munshi.search_position_history(
-                    position_id=position_data.position_id)
-                # re-setting memory
-                strategy_name = db_position_data.strategy_name
-
-                self._positions[strategy_name].update({
-                    position_data.symbol: db_position_data
-                })
-
             else:
-                # Is position presents in memory?
-                self._logger_.info(
-                    f"No ! order data found for {position_data}"
-                    f" \n\t\t\t\t\t\t\t "
-                    f"*** Escaping Position handling ***!")
+                # Order does not present in memory check in database
+                db_position_datas = self.trade_munshi.search_position_history(
+                    position_id=position_data.position_id)
+                if db_position_datas and len(db_position_datas) > 0:
+                    # re-setting memory
+                    db_position_data = db_position_datas[0]
+                    strategy_name = db_position_data.strategy_name
+                    # syncing the older data with current one
+                    db_position_data.data = position_data.data
+
+                    self._positions[strategy_name].update({
+                        position_data.symbol: db_position_data
+                    })
+                else:
+                    # Is position presents in memory?
+                    strategy_name = position_data.strategy_name if position_data.strategy_name else f"{position_data.symbol}_strategy"
+                    # Access the dictionary for the specific strategy, then call .update()
+                    self._positions[strategy_name].update({
+                        position_data.symbol: position_data
+                    })
+                    # add position order map to trade munshi position_order_queue for persist
+                    self.trade_munshi.save_position_snapshot(self._positions)
+                    self._logger_.info(
+                        f" Neither! order nor db Position found for : "
+                        f" \n\t\t\t\t\t\t\t "
+                        f"{position_data}"
+                        f" \n\t\t\t\t\t\t\t "
+                        f"*** Persisting Position in System ***!")
         except Exception as e:
             self._logger_.error(
                 f"Bahadur das having error while handle_position {position_data_result} and error is : {e}")
