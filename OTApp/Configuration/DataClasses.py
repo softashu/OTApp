@@ -35,6 +35,7 @@ class ConditionalOrderDetails:
     state: str = "pending"  # pending, placed, triggered, cancelled
     size: int = 0
     trigger_percentage: Optional[float] = None
+    data: dict = field(default_factory=dict)
 
 
 @dataclass

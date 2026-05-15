@@ -49,6 +49,8 @@ class BahaduarDass():
         self._yet_filled_: dict[str, dict[str, OrderResult]] = defaultdict(dict)
         self._filled: dict[str, dict[str, OrderResult]] = defaultdict(dict)
         self._positions: dict[str, dict[str, PositionData]] = defaultdict(dict)
+        # Keeping aside of modified position from _positions
+        self._positions_modified: dict[str, dict[str, PositionData]] = defaultdict(dict)
         self.stop_pending_order_watch_event = threading.Event()
 
         # The dedicated spirit: processing in the background
@@ -104,7 +106,7 @@ class BahaduarDass():
                 # Step 3: Persistence - Save the fill snapshot
                 # self.save_trade_snapshot(fill_data)
             except Exception as e:
-                self._logger_.error(f"🚨 Order Monitor Worker Thread Error: {str(e)}")
+                self._logger_.error(f"🚨 Order Monitor Worker Thread Error: {str(e)}", exc_info=True)
                 # Optional: Re-queue the fill if processing failed
                 if order_data:
                     self.order_queue.put(order_data)
@@ -158,6 +160,33 @@ class BahaduarDass():
             elif order_state in {'create', 'update', 'open'}:
                 with self._active_order_lock_:
                     self._yet_filled_[strategy_name][order_data_result.get('product_id')] = order_data_class
+            elif order_state == "pending":
+                bracket_order: bool = order_data_result.get('bracket_order')
+                if bracket_order:
+                    # know parent
+                    bracket_meta = order_data_result.get('meta_data')
+                    parent_type = bracket_meta.get('parent_type')
+                    if parent_type == 'position':
+                        # search existing position or order in the system.
+                        if order_data_result.get('stop_order_type') == 'take_profit_order':
+                            self.adjust_position_bracket(order_data_result, tp=True)
+                        if order_data_result.get('stop_order_type') == 'stop_loss_order':
+                            self.adjust_position_bracket(order_data_result, sl=True)
+                        # search_position = self.search_parent(child_order=order_data_result)
+                    elif parent_type == 'order':
+                        # TODO : need to check how to associate with existing order
+                        self._logger_.warning(
+                            f"***Unhandled Bracket Order : {order_data_result} "
+                            f"\n\t\t\t\t\t"
+                            f" Of  Parent Type : {parent_type}")
+                    else:
+                        self._logger_.warning(
+                            f"***Unhandled Bracket Order : {order_data_result} "
+                            f"\n\t\t\t\t\t"
+                            f" Of  Parent Type : {parent_type}")
+            else:
+                self._logger_.warning(
+                    f"***Unhandled Order State: {order_state} \n\t\t\t\t\t Order data : {order_data_result}")
 
     def handle_order_data(self, order_data):
         try:
@@ -178,17 +207,33 @@ class BahaduarDass():
                     self._yet_filled_[strategy_name].pop(order_data.get('product_id'), None)
             elif order_state in {'create', 'update', 'open', 'pending'}:
                 with self._active_order_lock_:
-                    self._yet_filled_[strategy_name][order_data.get('product_id')] = order_data_class
                     if order_state not in {'pending'}:
+                        self._yet_filled_[strategy_name][order_data.get('product_id')] = order_data_class
                         OrderManager(self._logger_).adjust_brackets(order_data, order_data_class)
                     elif order_state == 'pending':
-                        # TODO :
-                        # update associated position for SL and TP details
-                        # Update conditional ids
-                        # Clean the Order / Position map
-                        if order_data.get('stop_order_type') == 'take_profit_order':
-                            self.adjust_position_bracket(order_data, tp=True)
-
+                        # TODO for >
+                        # Clean the Order / Position map and update in persistence layers
+                        bracket_order: bool = order_data.get('bracket_order')
+                        if bracket_order:
+                            # know parent
+                            bracket_meta = order_data.get('meta_data')
+                            parent_type = bracket_meta.get('parent_type')
+                            if parent_type == 'position':
+                                if order_data.get('stop_order_type') == 'take_profit_order':
+                                    self.adjust_position_bracket(order_data, tp=True)
+                                if order_data.get('stop_order_type') == 'stop_loss_order':
+                                    self.adjust_position_bracket(order_data, sl=True)
+                            elif parent_type == 'order':
+                                # TODO : need to check how to associate with existing order
+                                self._logger_.warning(
+                                    f"***Unhandled Bracket Order : {order_data} "
+                                    f"\n\t\t\t\t\t"
+                                    f" Of  Parent Type : {parent_type}")
+                            else:
+                                self._logger_.warning(
+                                    f"***Unhandled Bracket Order : {order_data} "
+                                    f"\n\t\t\t\t\t"
+                                    f" Of  Parent Type : {parent_type}")
             else:
                 self._logger_.critical(f"Getting unhandled order :  {order_data}")
         except Exception as e:
@@ -307,6 +352,7 @@ class BahaduarDass():
                     # delete order from self._yet_filled_ dictionary but unsubscribe as we need feed for position tracking
                     self.handle_delete_order(order_data=order_data.data, unsubscribe=True)
             else:
+                # TODO refactor code , create one method so that can be re-use
                 # Order does not present in memory check in database
                 db_position_datas = self.trade_munshi.search_position_history(
                     position_id=position_data.position_id)
@@ -321,6 +367,7 @@ class BahaduarDass():
                         position_data.symbol: db_position_data
                     })
                 else:
+                    # **** Critical Case : Persisting of position did not happen in past ****
                     # Is position presents in memory?
                     strategy_name = position_data.strategy_name if position_data.strategy_name else f"{position_data.symbol}_strategy"
                     # Access the dictionary for the specific strategy, then call .update()
@@ -437,13 +484,21 @@ class BahaduarDass():
         searched_position: PositionData | None = self.find_position(symbol=symbol, strategy_name=strategy_name,
                                                                     parent_id=parent_id)
         if tp:
-            searched_position.take_profit.conditional_order_id = order_data.get('id')
-            searched_position.take_profit.trigger_price = order_data.get('stop_price')
-            searched_position.take_profit.limit_price = order_data.get('limit_price')
+            take_profit: ConditionalOrderDetails | None = searched_position.take_profit
+            if not take_profit:
+                take_profit = ConditionalOrderDetails()
+            take_profit.conditional_order_id = order_data.get('id')
+            take_profit.trigger_price = order_data.get('stop_price')
+            take_profit.limit_price = order_data.get('limit_price')
+            take_profit.data = order_data
         elif sl:
-            searched_position.stop_loss.conditional_order_id = order_data.get('id')
-            searched_position.stop_loss.trigger_price = order_data.get('stop_price')
-            searched_position.stop_loss.limit_price = order_data.get('limit_price')
+            stop_loss: ConditionalOrderDetails | None = searched_position.stop_loss
+            if not stop_loss:
+                stop_loss = ConditionalOrderDetails()
+            stop_loss.conditional_order_id = order_data.get('id')
+            stop_loss.trigger_price = order_data.get('stop_price')
+            stop_loss.limit_price = order_data.get('limit_price')
+            stop_loss.data = order_data
 
     def find_position(self, symbol, strategy_name=None, parent_id=None):
         """
@@ -500,3 +555,18 @@ class BahaduarDass():
             return order_id_from_parent == order_id_from_pos
         except Exception:
             return False
+
+    # Extra method may be removed after while
+
+    def search_parent(self, child_order):
+        searched_position: PositionData | None = None
+        meta = child_order.get('meta_data')
+        parent_id = meta.get('parent_id')
+        parent_type = meta.get('parent_type')
+        symbol = child_order.get('product_symbol')
+        strategy_name = child_order.get('client_order_id') if child_order.get(
+            'client_order_id') else f"{symbol}_strategy"
+        if parent_type:
+            searched_position = self.find_position(symbol=symbol, strategy_name=strategy_name,
+                                                   parent_id=parent_id)
+        return searched_position

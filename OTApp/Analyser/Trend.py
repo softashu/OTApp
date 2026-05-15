@@ -140,6 +140,8 @@ class Market:
         # Super_trend
         super_trend = indicator.get_supertrend_status(df_for_all, symbol=symbol, resolution=resolution,
                                                       period=10, multiplier=3)
+        if super_trend['flat'] and 'SIDEWAYS' in super_trend['super_trend']:
+            strangle_points = strangle_points + 1
 
         if trend == 'PERFECT_SIDEWAYS' and haan and super_trend['flat'] and 'SIDEWAYS' in super_trend['super_trend']:
             strangle_points = strangle_points + 1

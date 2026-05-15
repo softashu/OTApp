@@ -262,7 +262,7 @@ class OrderManager:
 
     def adjust_brackets(self, order_data, order_data_class: OrderResult):
         try:
-            # TODO we need to adjust SL and TP as per order update
+            # TODO We need to adjust SL and TP as per order update or according to price changes
             order_limit_price = order_data_class.limit_price
             sl = order_data_class.stop_loss
             tp = order_data_class.take_profit
