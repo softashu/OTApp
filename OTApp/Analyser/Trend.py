@@ -1,3 +1,4 @@
+from collections import defaultdict
 from pprint import pprint
 
 import pandas as pd
@@ -18,7 +19,10 @@ class Market:
         price_trend = ''
         over_xtended = ''
         trend = ''
+        # -------------------------
+        strangle_reasons: list[str] = []
         strangle_points = 0
+        # --------------------------
         """
         The Correct Workflow
         The best practice is to calculate your technical indicators using the full 150 candles first, 
@@ -30,6 +34,18 @@ class Market:
         3. Slice for OBs: Pass the last 30 or 50 candles to the Order Block function to find the 
            most recent institutional zones.
         """
+
+        def mark_strangle_analysis(analysis_msg: str, log_level="info") -> int:
+            if log_level == "critical":
+                self._loger_.critical(analysis_msg)
+            else:
+                self._loger_.info(analysis_msg)
+            nonlocal strangle_points
+            nonlocal strangle_reasons
+            strangle_points = strangle_points + 1
+            strangle_reasons.append(analysis_msg)
+            return strangle_points
+
         candles = DataCollector().get_candles(symbol, resolution, 150)
         df_for_all = pd.DataFrame(candles)
         indicator = Indicator()
@@ -42,9 +58,11 @@ class Market:
         elif price_change_pct < -5.0:
             price_trend = "TREND_DOWN"
         else:
+            # TODO haan = True also can we shifted to  mark_strangle_analysis(strangle_analysis_msg)
             haan = True
             price_trend = "SIDEWAYS"
-            self._loger_.info("Price Movement : ✅ Market looks sideways. Safe to proceed...")
+            strangle_analysis_msg = "Price Movement : ✅ Market looks sideways. Safe to proceed..."
+            mark_strangle_analysis(strangle_analysis_msg)
 
         # 2. Checking the slope of the 20-period Simple Moving Average (SMA)
         sma_slope = indicator.sma_slope(df_for_all, symbol, resolution)
@@ -54,9 +72,9 @@ class Market:
         # if abs(sma_slope) < 0.05 and abs(price_change_24h) < 5.0:
         if abs(sma_slope['sma_slop_val']) < 0.05 and abs(price_change_pct) < 5.0:
             trend = "STABLE_SIDEWAYS"
-            strangle_points = strangle_points + 1
-            self._loger_.info("+SMA Slope: ✅ 💎 Stable conditions. Delta 0.15 Strangle is high probability.")
+            strangle_analysis_msg = "+SMA Slope: ✅ 💎 Stable conditions. Delta 0.15 Strangle is high probability."
             haan = True
+            mark_strangle_analysis(strangle_analysis_msg)
         elif sma_slope['sma_slop'] == "TREND_UP" and price_trend == 'TREND_UP':
             trend = 'TREND_UP'
             self._loger_.warning(
@@ -87,10 +105,10 @@ class Market:
         """
         if is_rsi_neutral and trend == "STABLE_SIDEWAYS":
             trend = "PERFECT_SIDEWAYS"
-            strangle_points = strangle_points + 1
-            self._loger_.info("+RSI : ✅ 💎 💎 Perfect conditions. Delta 0.15 Strangle is high probability.")
+            strangle_analysis_msg = "+RSI : ✅ 💎 💎 Perfect conditions. Delta 0.15 Strangle is high probability."
             haan = True
-        # Good sign for market exhausted,...fall will soon
+            mark_strangle_analysis(strangle_analysis_msg)
+        # TODO : Good sign for market exhausted,...fall will soon
         elif rsi >= 70 and trend == 'STABLE_SIDEWAYS':
             trend = "OVERBOUGHT_EXHAUSTED"
             over_xtended = 'OVERBOUGHT'
@@ -105,7 +123,7 @@ class Market:
                 "⚠️ Market is overbought! 🟥 . Skipping Strangle as these levels often precede a sharp, volatile "
                 "reversal. Consider Bearish spreads or Bearish")
             haan = False
-        # Good sign for go short
+        # TODO : Good sign for go short
         elif rsi >= 70 and trend == 'TREND_DOWN':
             trend = "OVERBOUGHT_TRENDING_DOWN"
             over_xtended = 'OVERBOUGHT'
@@ -120,7 +138,7 @@ class Market:
                 "⚠️ Market is oversold! 🟩 . Skipping Strangle as these levels often precede a sharp, volatile "
                 "reversal. Consider bull spreads or Bullish ...")
             haan = False
-        # Good sign for go long
+        # TODO : Good sign for go long
         elif rsi <= 25 and trend == 'TREND_UP':
             trend = "OVERSOLD_TRENDING_UP"
             over_xtended = 'OVERSOLD'
@@ -128,7 +146,7 @@ class Market:
                 "⚠️ Market is oversold! 🟩 . Skipping Strangle , goog sign for long trade "
                 " Consider bull spreads or Bullish ...")
             haan = False
-        #  over sold and exhausted good sign for go long
+        #  TODO : over sold and exhausted good sign for go long
         elif rsi <= 25 and trend == 'STABLE_SIDEWAYS':
             trend = "OVERSOLD_EXHAUSTED"
             over_xtended = 'OVERSOLD'
@@ -141,29 +159,32 @@ class Market:
         super_trend = indicator.get_supertrend_status(df_for_all, symbol=symbol, resolution=resolution,
                                                       period=10, multiplier=3)
         if super_trend['flat'] and 'SIDEWAYS' in super_trend['super_trend']:
-            strangle_points = strangle_points + 1
+            mark_strangle_analysis("Super Trend : SIDEWAYS , & Flatness : TRUE")
 
         if trend == 'PERFECT_SIDEWAYS' and haan and super_trend['flat'] and 'SIDEWAYS' in super_trend['super_trend']:
-            strangle_points = strangle_points + 1
-            self._loger_.info("Super Trend : ✅ 💎 💎 💎 Super conditions Strangle is high probability.")
+            strangle_analysis_msg = "Super Trend : ✅ 💎 💎 💎 Super conditions Strangle is high probability."
+            mark_strangle_analysis(strangle_analysis_msg)
             if 'CONFIRM' in super_trend['super_trend']:
-                self._loger_.critical(
-                    "Super Trend : ✅ 💎 💎 💎 💎 💎 Ultimate Green Light ON Strangle is high probability.")
-                strangle_points = strangle_points + 1
+                strangle_analysis_msg = "Super Trend : ✅ 💎 💎 💎 💎 💎 Ultimate Green Light ON Strangle is high probability."
+                mark_strangle_analysis(strangle_analysis_msg, log_level="critical")
         elif trend == 'STABLE_SIDEWAYS' and haan and super_trend['flat'] and 'SIDEWAYS' in super_trend['super_trend']:
-            strangle_points = strangle_points + 1
-            self._loger_.info("Super Trend :  ✅ 💎 💎 💎 Super conditions Strangle is high probability.")
+            strangle_analysis_msg = "Super Trend :  ✅ 💎 💎 💎 Super conditions Strangle is high probability."
+            mark_strangle_analysis(strangle_analysis_msg)
             if 'CONFIRM' in super_trend['super_trend']:
-                strangle_points = strangle_points + 1
-                self._loger_.critical("Super Trend : ✅ 💎 💎 💎 💎 Green Light ON Strangle is high probability.")
+                strangle_analysis_msg = "Super Trend : ✅ 💎 💎 💎 💎 Green Light ON Strangle is high probability."
+                mark_strangle_analysis(strangle_analysis_msg, log_level="critical")
         elif super_trend['super_trend'] == 'BEARISH_SIDEWAYS_CONFIRM':
-            strangle_points = strangle_points + 1
-
+            mark_strangle_analysis("super_trend : BEARISH_SIDEWAYS_CONFIRM")
         # Calculating swing high and low
         swings = indicator.get_swings(df_for_all, symbol=symbol, resolution=resolution, window=2)
-        self._loger_.info(f"Puts should closed when market crossing or crossed below {swings['swing_low']}"
-                          f" And Call should closed when marker crossing or crossed up {swings['swing_high']}")
-
+        self._loger_.info(f"************************SWINGS Analysis Starts************************"
+                          f"\n\t\t\t\t\t\t"
+                          f"Puts should closed when market crossing or crossed below : {swings['swing_low']}"
+                          f"\n\t\t\t\t\t\t"
+                          f" And Call should closed when marker crossing or crossed up :  {swings['swing_high']}"
+                          f"\n\t\t\t\t\t\t"
+                          f"************************SWINGS Analysis END************************"
+                          )
         # Calculating Order block
         """
         Validated Bearish OB above price	✅ Safe to sell Call. The OB acts as a ceiling for your 0.15 Delta.
@@ -173,11 +194,11 @@ class Market:
         if not obs and (trend == 'STABLE_SIDEWAYS' or trend == 'PERFECT_SIDEWAYS'):
             self._loger_.info(
                 f"👉 ACTION: OB-Safe to Enter 0.15 Delta Strangle")
-            self._loger_.critical("Order Block : ✅ 💎 💎 💎 💎 Green Light ON Strangle is high probability.")
-            strangle_points = strangle_points + 1
+            strangle_analysis_msg = "Order Block : ✅ 💎 💎 💎 💎 Green Light ON Strangle is high probability."
+            mark_strangle_analysis(strangle_analysis_msg, log_level="critical")
             if 'CONFIRM' in super_trend['super_trend']:
-                self._loger_.critical(
-                    "Order Block : ✅ 💎 💎 💎 💎 💎 💎 Ultimate++ Green Light ON Strangle is high probability.")
+                strangle_analysis_msg = "Order Block : ✅ 💎 💎 💎 💎 💎 💎 Ultimate++ Green Light ON Strangle is high probability."
+                mark_strangle_analysis(strangle_analysis_msg, log_level="critical")
 
         return {
             'sideways': haan,
@@ -190,7 +211,11 @@ class Market:
             'rsi': rsi,
             'market_trend': trend,
             'super_trend': super_trend,
-            'strangle_points': strangle_points,
+            'strangle_analysis': {
+                'strangle_points': strangle_points,
+                'strangle_reasons': strangle_reasons
+            },
+            'strangle_points': strangle_points,  # TODO We have to remove after strangle_analysis have integrated
             'order_block': obs,
             'swings': swings
         }
