@@ -180,10 +180,23 @@ class BahaduarDass():
                             f"\n\t\t\t\t\t"
                             f" Of  Parent Type : {parent_type}")
                     else:
-                        self._logger_.warning(
-                            f"***Unhandled Bracket Order : {order_data_result} "
-                            f"\n\t\t\t\t\t"
-                            f" Of  Parent Type : {parent_type}")
+                        # handling SL and Target for option contracts
+                        order_source = bracket_meta.get('order_source')
+                        if order_source == 'positions_TP_SL_order':
+                            if order_data_result.get('stop_order_type') == 'take_profit_order':
+                                self.adjust_position_bracket(order_data_result, tp=True)
+                            elif order_data_result.get('stop_order_type') == 'stop_loss_order':
+                                self.adjust_position_bracket(order_data_result, sl=True)
+                            else:
+                                self._logger_.warning(
+                                    f"***Unhandled Bracket Order : {order_data_result} "
+                                    f"\n\t\t\t\t\t"
+                                    f" Of  Parent Type : {parent_type}")
+                        else:
+                            self._logger_.warning(
+                                f"***Unhandled Bracket Order : {order_data_result} "
+                                f"\n\t\t\t\t\t"
+                                f" Of  Parent Type : {parent_type}")
             else:
                 self._logger_.warning(
                     f"***Unhandled Order State: {order_state} \n\t\t\t\t\t Order data : {order_data_result}")

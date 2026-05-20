@@ -49,7 +49,10 @@ class BTC_15_Delta_Strangle:
                 if market_check['strangle_points'] >= 3:
                     trade_record = None
                     self._loger_.critical(
-                        f"***Market side ways with strangle_points {market_check['strangle_points']} good to initiate trade***")
+                        f"***Market side ways with strangle_points {market_check['strangle_points']}"
+                        f"\n\t\t\t\t\t\t"
+                        f"And Strangle points reasons : {market_check['strangle_analysis']['strangle_reasons']}"
+                        f"Good to initiate trade***")
                     # # if no_trade false then goahead of trade
                     # no_trade = True
                     # 2. Fetch fresh option chain data until len(option_list)==2 upto 5 mins for every 30 sec to 60 sec
